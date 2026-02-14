@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "latchlabel",
+  "version": "${version}",
+  "name": "Latch & Label",
+  "description": "Client-side chest tagging and find tools.",
+  "authors": [
+    "Latch & Label"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/latchlabel/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.latchandlabel.client.LatchLabelClient"
+    ],
+    "modmenu": [
+      "com.latchandlabel.client.compat.modmenu.LatchLabelModMenuApi"
+    ]
+  },
+  "mixins": [
+    "latchlabel.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "~1.21.10",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
