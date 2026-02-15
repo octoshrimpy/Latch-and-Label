@@ -3,8 +3,11 @@ package com.latchandlabel.client.input;
 import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.TagStore;
+import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.KeybindSettings;
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.find.FindCommand;
+import com.latchandlabel.client.find.FindSettings;
 import com.latchandlabel.client.tagging.TaggingController;
 import com.latchandlabel.client.targeting.ContainerTargeting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -22,6 +25,7 @@ public final class ClientInputHandler {
     private static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(Identifier.of("latchlabel", "general"));
 
     private static KeyBinding openPickerKey;
+    private static KeyBinding findShortcutKey;
     private static boolean inspectModeActive;
 
     private ClientInputHandler() {
@@ -34,6 +38,12 @@ public final class ClientInputHandler {
                 KeybindSettings.openPickerKeyCode(),
                 CATEGORY
         ));
+        findShortcutKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.latchlabel.find_shortcut",
+                InputUtil.Type.KEYSYM,
+                KeybindSettings.findShortcutKeyCode(),
+                CATEGORY
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientInputHandler::onEndTick);
     }
@@ -44,6 +54,7 @@ public final class ClientInputHandler {
         }
 
         openPickerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.openPickerKeyCode()));
+        findShortcutKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.findShortcutKeyCode()));
         KeyBinding.updateKeysByCode();
     }
 
@@ -62,10 +73,14 @@ public final class ClientInputHandler {
         boolean isCtrlDown = isModifierDown(window, GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL);
         boolean isAltDown = isModifierDown(window, GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT);
 
-        inspectModeActive = isAltDown || (client.player != null && client.player.isSneaking());
+        boolean isSneaking = client.player != null && client.player.isSneaking();
+        inspectModeActive = InspectSettings.isInspectActive(isAltDown, isSneaking);
 
         while (openPickerKey.wasPressed()) {
             onOpenPickerPressed(client, isShiftDown, isCtrlDown);
+        }
+        while (findShortcutKey.wasPressed()) {
+            onFindShortcutPressed(client);
         }
     }
 
@@ -95,6 +110,13 @@ public final class ClientInputHandler {
             tagStore.setTag(chestKey, lastUsed);
             LatchLabel.LOGGER.info("Applied last-used category '{}' to {}", lastUsed, chestKey.toStringKey());
         });
+    }
+
+    private static void onFindShortcutPressed(MinecraftClient client) {
+        if (!FindSettings.allowFindKeybind()) {
+            return;
+        }
+        FindCommand.runFromShortcut(client);
     }
 
     private static boolean isModifierDown(Window window, int leftKey, int rightKey) {

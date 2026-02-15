@@ -63,11 +63,15 @@ public final class ClientConfigManager {
         }
 
         InspectSettings.setInspectRange(asInt(root.get("inspectRange"), 8));
+        InspectSettings.setActivationMode(InspectActivationMode.fromConfigValue(asString(root.get("inspectActivationMode"), "alt_or_shift")));
         FindSettings.setDefaultFindRadius(asInt(root.get("defaultFindRadius"), 24));
         FindResultState.setHighlightDurationSeconds(asInt(root.get("highlightDurationSeconds"), 10));
         FindSettings.setVariantMatchingEnabled(asBoolean(root.get("variantMatchingEnabled"), true));
         FindSettings.setEnableFindOverlayList(asBoolean(root.get("enableFindOverlayList"), false));
+        FindSettings.setAllowSlashFCommand(asBoolean(root.get("allowSlashFCommand"), true));
+        FindSettings.setAllowFindKeybind(asBoolean(root.get("allowFindKeybind"), true));
         KeybindSettings.setOpenPickerKeyCode(asInt(root.get("openPickerKeyCode"), 66));
+        KeybindSettings.setFindShortcutKeyCode(asInt(root.get("findShortcutKeyCode"), -1));
         ClientInputHandler.reloadFromSettings();
 
         LatchLabel.LOGGER.info("Reloaded client config from {}", configPath);
@@ -89,11 +93,15 @@ public final class ClientConfigManager {
 
     private void writeDefaults() {
         InspectSettings.setInspectRange(8);
+        InspectSettings.setActivationMode(InspectActivationMode.ALT_OR_SHIFT);
         FindSettings.setDefaultFindRadius(24);
         FindResultState.setHighlightDurationSeconds(10);
         FindSettings.setVariantMatchingEnabled(true);
         FindSettings.setEnableFindOverlayList(false);
+        FindSettings.setAllowSlashFCommand(true);
+        FindSettings.setAllowFindKeybind(true);
         KeybindSettings.setOpenPickerKeyCode(66);
+        KeybindSettings.setFindShortcutKeyCode(-1);
         ClientInputHandler.reloadFromSettings();
         writeCurrentSettings();
 
@@ -104,11 +112,15 @@ public final class ClientConfigManager {
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
         root.addProperty("inspectRange", InspectSettings.inspectRange());
+        root.addProperty("inspectActivationMode", InspectSettings.activationMode().toConfigValue());
         root.addProperty("defaultFindRadius", FindSettings.defaultFindRadius());
         root.addProperty("highlightDurationSeconds", FindResultState.getHighlightDurationSeconds());
         root.addProperty("enableFindOverlayList", FindSettings.enableFindOverlayList());
         root.addProperty("variantMatchingEnabled", FindSettings.variantMatchingEnabled());
+        root.addProperty("allowSlashFCommand", FindSettings.allowSlashFCommand());
+        root.addProperty("allowFindKeybind", FindSettings.allowFindKeybind());
         root.addProperty("openPickerKeyCode", KeybindSettings.openPickerKeyCode());
+        root.addProperty("findShortcutKeyCode", KeybindSettings.findShortcutKeyCode());
 
         try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);
@@ -129,5 +141,12 @@ public final class ClientConfigManager {
             return fallback;
         }
         return element.getAsBoolean();
+    }
+
+    private static String asString(JsonElement element, String fallback) {
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return fallback;
+        }
+        return element.getAsString();
     }
 }

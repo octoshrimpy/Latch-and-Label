@@ -33,8 +33,10 @@ public final class FindCommand {
     }
 
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
+        dispatcher.register(buildFindLiteral("find"));
         dispatcher.register(
-                ClientCommandManager.literal("find")
+                ClientCommandManager.literal("f")
+                        .requires(source -> FindSettings.allowSlashFCommand())
                         .executes(FindCommand::executeNoArgs)
                         .then(ClientCommandManager.argument(ARG_ITEM_ID, StringArgumentType.word())
                                 .suggests(FindCommand::suggestItems)
@@ -44,6 +46,22 @@ public final class FindCommand {
                                 )
                         )
         );
+    }
+
+    public static int runFromShortcut(MinecraftClient client) {
+        if (client == null || client.player == null || client.world == null) {
+            return 0;
+        }
+
+        Item mainhandItem = client.player.getMainHandStack().getItem();
+        if (mainhandItem == Items.AIR) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.translatable("latchlabel.find.error_mainhand_empty"), true);
+            }
+            return 0;
+        }
+
+        return runFind(client, mainhandItem, FindSettings.defaultFindRadius());
     }
 
     private static int executeNoArgs(CommandContext<FabricClientCommandSource> context) {
@@ -58,7 +76,7 @@ public final class FindCommand {
             return 0;
         }
 
-        return runFind(context.getSource(), mainhandItem, FindSettings.defaultFindRadius());
+        return runFind(context.getSource().getClient(), mainhandItem, FindSettings.defaultFindRadius());
     }
 
     private static int executeWithItem(CommandContext<FabricClientCommandSource> context) {
@@ -68,7 +86,7 @@ public final class FindCommand {
             return 0;
         }
 
-        return runFind(context.getSource(), item.get(), FindSettings.defaultFindRadius());
+        return runFind(context.getSource().getClient(), item.get(), FindSettings.defaultFindRadius());
     }
 
     private static int executeWithItemAndRadius(CommandContext<FabricClientCommandSource> context) {
@@ -79,14 +97,15 @@ public final class FindCommand {
         }
 
         int radius = IntegerArgumentType.getInteger(context, ARG_RADIUS);
-        return runFind(context.getSource(), item.get(), radius);
+        return runFind(context.getSource().getClient(), item.get(), radius);
     }
 
-    private static int runFind(FabricClientCommandSource source, Item targetItem, int radius) {
+    private static int runFind(MinecraftClient client, Item targetItem, int radius) {
         long startedAtNs = System.nanoTime();
-        MinecraftClient client = source.getClient();
         if (client.world == null || client.player == null) {
-            source.sendError(Text.translatable("latchlabel.find.error_world_unavailable"));
+            if (client.player != null) {
+                client.player.sendMessage(Text.translatable("latchlabel.find.error_world_unavailable"), true);
+            }
             return 0;
         }
 
@@ -122,6 +141,18 @@ public final class FindCommand {
         }
 
         return results.size();
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildFindLiteral(String name) {
+        return ClientCommandManager.literal(name)
+                .executes(FindCommand::executeNoArgs)
+                .then(ClientCommandManager.argument(ARG_ITEM_ID, StringArgumentType.word())
+                        .suggests(FindCommand::suggestItems)
+                        .executes(FindCommand::executeWithItem)
+                        .then(ClientCommandManager.argument(ARG_RADIUS, IntegerArgumentType.integer(1, 256))
+                                .executes(FindCommand::executeWithItemAndRadius)
+                        )
+                );
     }
 
     private static Optional<Item> parseItemId(String rawItemId) {

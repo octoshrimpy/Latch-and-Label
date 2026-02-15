@@ -22,7 +22,6 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
 
@@ -42,10 +41,6 @@ public final class FocusedTagBillboardRenderer {
         }
 
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null && client.player.isSneaking()) {
-            return;
-        }
-
         FocusedCategory focused = resolveFocusedCategory(client);
         if (focused == null) {
             return;
@@ -90,7 +85,7 @@ public final class FocusedTagBillboardRenderer {
 
         MinecraftClient client = MinecraftClient.getInstance();
         FocusedCategory focused = resolveFocusedCategory(client);
-        if (focused == null || !isAltDown(client)) {
+        if (focused == null) {
             return;
         }
 
@@ -133,15 +128,6 @@ public final class FocusedTagBillboardRenderer {
         double y = key.pos().getY() + 0.5 + (face.getOffsetY() * 0.501);
         double z = key.pos().getZ() + 0.5 + (face.getOffsetZ() * 0.501);
         return new Vec3d(x, y, z);
-    }
-
-    private static boolean isAltDown(MinecraftClient client) {
-        if (client == null || client.getWindow() == null) {
-            return false;
-        }
-        long handle = client.getWindow().getHandle();
-        return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS;
     }
 
     private record FocusedCategory(Category category, Vec3d center) {

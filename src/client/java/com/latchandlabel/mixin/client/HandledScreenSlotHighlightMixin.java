@@ -32,9 +32,9 @@ public abstract class HandledScreenSlotHighlightMixin {
             return;
         }
 
-        boolean shiftDown = latchlabel$isShiftDown();
+        boolean inspectDown = latchlabel$isInspectDown();
         Category categoryToDraw;
-        if (shiftDown) {
+        if (inspectDown) {
             categoryToDraw = itemCategoryOpt.get();
         } else {
             Optional<Category> activeCategoryOpt = ContainerTagButtonManager.activeCategoryFor((Screen) (Object) this);
@@ -48,20 +48,23 @@ public abstract class HandledScreenSlotHighlightMixin {
             categoryToDraw = activeCategory;
         }
 
-        int alpha = shiftDown ? 0x99 : 0x66;
+        int alpha = inspectDown ? 0x99 : 0x66;
         int color = (alpha << 24) | (categoryToDraw.color() & 0x00FFFFFF);
         int left = slot.x;
         int top = slot.y;
         context.fill(left, top, left + 16, top + 16, color);
     }
 
-    private static boolean latchlabel$isShiftDown() {
+    private static boolean latchlabel$isInspectDown() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) {
             return false;
         }
 
-        return InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+        boolean shiftDown = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
                 || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
+        boolean altDown = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
+                || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT);
+        return shiftDown || altDown;
     }
 }
