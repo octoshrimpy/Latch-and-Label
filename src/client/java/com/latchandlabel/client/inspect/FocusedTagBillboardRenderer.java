@@ -10,24 +10,16 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexRendering;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.Optional;
 
 public final class FocusedTagBillboardRenderer {
-    private static final double MARKER_HALF = 0.09;
-
     private FocusedTagBillboardRenderer() {
     }
 
@@ -36,46 +28,7 @@ public final class FocusedTagBillboardRenderer {
     }
 
     public static void renderWorld(WorldRenderContext context) {
-        if (!ClientInputHandler.isInspectModeActive()) {
-            return;
-        }
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        FocusedCategory focused = resolveFocusedCategory(client);
-        if (focused == null) {
-            return;
-        }
-
-        MatrixStack matrices = context.matrices();
-        VertexConsumerProvider consumers = context.consumers();
-        if (matrices == null || consumers == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
-            return;
-        }
-
-        Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
-        VertexConsumer lineConsumer = consumers.getBuffer(RenderLayer.getLines());
-
-        Vec3d center = focused.center;
-        Box outer = new Box(
-                center.x - MARKER_HALF,
-                center.y - MARKER_HALF,
-                center.z - MARKER_HALF,
-                center.x + MARKER_HALF,
-                center.y + MARKER_HALF,
-                center.z + MARKER_HALF
-        );
-        Box inner = outer.shrink(0.02, 0.02, 0.02);
-
-        int rgb = focused.category.color();
-        float r = ((rgb >> 16) & 0xFF) / 255.0f;
-        float g = ((rgb >> 8) & 0xFF) / 255.0f;
-        float b = (rgb & 0xFF) / 255.0f;
-
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        VertexRendering.drawBox(matrices.peek(), lineConsumer, outer, r, g, b, 0.95f);
-        VertexRendering.drawBox(matrices.peek(), lineConsumer, inner, 0.10f, 0.10f, 0.10f, 0.85f);
-        matrices.pop();
+        // Intentionally no-op: removed focused face marker cube.
     }
 
     private static void renderHud(DrawContext context, RenderTickCounter tickCounter) {

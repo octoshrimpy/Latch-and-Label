@@ -3,6 +3,8 @@ package com.latchandlabel.client.config.ui;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.config.InspectActivationMode;
 import com.latchandlabel.client.config.InspectSettings;
+import com.latchandlabel.client.config.MoveSourceMode;
+import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import net.minecraft.client.gui.DrawContext;
@@ -35,6 +37,7 @@ public final class LatchLabelConfigScreen extends Screen {
     private ButtonWidget overlayListButton;
     private ButtonWidget slashFButton;
     private ButtonWidget findKeybindButton;
+    private ButtonWidget moveSourceButton;
 
     public LatchLabelConfigScreen(Screen parent) {
         super(Text.translatable("screen.latchlabel.config.title"));
@@ -44,7 +47,7 @@ public final class LatchLabelConfigScreen extends Screen {
     @Override
     protected void init() {
         panelWidth = Math.min(520, width - 30);
-        panelHeight = 272;
+        panelHeight = 296;
         panelLeft = (width - panelWidth) / 2;
         panelTop = (height - panelHeight) / 2;
         labelX = panelLeft + 16;
@@ -103,6 +106,8 @@ public final class LatchLabelConfigScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.allow_f_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.find_keybind_label"), labelX, y, 0xFFE8E8E8);
+        y += rowHeight;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8);
     }
 
     private void addReloadButton() {
@@ -211,6 +216,15 @@ public final class LatchLabelConfigScreen extends Screen {
                 })
                 .dimensions(controlX, rowY, controlWidth, 20)
                 .build());
+        rowY += rowHeight;
+
+        moveSourceButton = addDrawableChild(ButtonWidget.builder(moveSourceText(), button -> {
+                    TransferSettings.setMoveSourceMode(nextMoveSourceMode(TransferSettings.moveSourceMode()));
+                    saveConfig();
+                    refreshButtonLabels();
+                })
+                .dimensions(controlX, rowY, controlWidth, 20)
+                .build());
     }
 
     private void addStepControl(int y, int initialValue, StepValueUpdater updater) {
@@ -256,6 +270,16 @@ public final class LatchLabelConfigScreen extends Screen {
         if (findKeybindButton != null) {
             findKeybindButton.setMessage(toggleText(FindSettings.allowFindKeybind()));
         }
+        if (moveSourceButton != null) {
+            moveSourceButton.setMessage(moveSourceText());
+        }
+    }
+
+    private static MoveSourceMode nextMoveSourceMode(MoveSourceMode current) {
+        return switch (current) {
+            case INVENTORY -> MoveSourceMode.INVENTORY_AND_HOTBAR;
+            case INVENTORY_AND_HOTBAR -> MoveSourceMode.INVENTORY;
+        };
     }
 
     private static InspectActivationMode nextInspectMode(InspectActivationMode current) {
@@ -276,6 +300,13 @@ public final class LatchLabelConfigScreen extends Screen {
 
     private static Text toggleText(boolean enabled) {
         return Text.translatable(enabled ? "options.on" : "options.off");
+    }
+
+    private static Text moveSourceText() {
+        return switch (TransferSettings.moveSourceMode()) {
+            case INVENTORY -> Text.translatable("screen.latchlabel.config.move_source.inventory");
+            case INVENTORY_AND_HOTBAR -> Text.translatable("screen.latchlabel.config.move_source.inventory_hotbar");
+        };
     }
 
     private static int clamp(int value, int min, int max) {
