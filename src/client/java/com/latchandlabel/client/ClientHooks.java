@@ -12,6 +12,7 @@ import com.latchandlabel.client.find.FindScanService;
 import com.latchandlabel.client.inspect.FocusedTagBillboardRenderer;
 import com.latchandlabel.client.inspect.InspectModeRenderer;
 import com.latchandlabel.client.config.ConfigCommand;
+import com.latchandlabel.client.data.TagScopeResolver;
 import com.latchandlabel.client.tooltip.ItemCategoryTooltipHandler;
 import com.latchandlabel.client.LatchLabel;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -30,6 +31,9 @@ public final class ClientHooks {
         ShulkerItemCategoryBridge.register();
         FindOverlayListHud.register();
         FocusedTagBillboardRenderer.registerHud();
+        ClientTickEvents.END_CLIENT_TICK.register(client ->
+                LatchLabelClientState.tagStore().setActiveScopeId(TagScopeResolver.resolveCurrentScopeId(client))
+        );
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);

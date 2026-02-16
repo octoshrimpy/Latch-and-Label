@@ -30,6 +30,7 @@
   "latchlabel.find.feedback_result_line": "- %s | %sm | %s",
   "latchlabel.find.result_exact": "exact",
   "latchlabel.find.result_variant": "variant",
+  "latchlabel.find.result_possible": "possible",
   "latchlabel.find.overlay.title": "Find Results",
   "latchlabel.find.overlay.entry": "%s | %sm | %s",
   "latchlabel.find.variant_on": "variants on",

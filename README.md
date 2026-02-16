@@ -56,6 +56,8 @@ Primary files:
 - `tags.json`
 - `item_categories_overrides.json`
 
+`tags.json` stores container tags under per-scope buckets (multiplayer server or singleplayer world). Inside each scope, keys are `dimension|x,y,z`.
+
 Reload config in-game with:
 - `/latchlabel reload`
 

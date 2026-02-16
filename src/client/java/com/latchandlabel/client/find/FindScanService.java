@@ -13,6 +13,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
@@ -43,6 +44,9 @@ public final class FindScanService {
         PlayerEntity player = client.player;
         Identifier dimensionId = world.getRegistryKey().getValue();
         double maxDistanceSq = (double) radius * radius;
+        String targetCategoryId = LatchLabelClientState.itemCategoryMappingService()
+                .categoryIdFor(Registries.ITEM.getId(targetItem))
+                .orElse(null);
         Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
         cacheOpenScreenContents(client, currentScreenChestKey);
         pruneObservedCache();
@@ -61,7 +65,7 @@ public final class FindScanService {
 
             BlockPos pos = chestKey.pos();
             BlockEntity blockEntity = world.getBlockEntity(pos);
-            MatchType matchType = resolveMatchType(client, currentScreenChestKey, chestKey, blockEntity, targetItem, matchSet);
+            MatchType matchType = resolveMatchType(client, currentScreenChestKey, chestKey, blockEntity, targetItem, matchSet, targetCategoryId);
             if (blockEntity instanceof Inventory inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
                 scanned++;
             }
@@ -104,7 +108,8 @@ public final class FindScanService {
             ChestKey chestKey,
             BlockEntity blockEntity,
             Item targetItem,
-            Set<Item> matchSet
+            Set<Item> matchSet,
+            String targetCategoryId
     ) {
         MatchType matchType = MatchType.NONE;
         if (blockEntity instanceof Inventory inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
@@ -115,6 +120,9 @@ public final class FindScanService {
         }
         if (matchType == MatchType.NONE) {
             matchType = detectMatchTypeFromObservedCache(chestKey, targetItem, matchSet);
+        }
+        if (matchType == MatchType.NONE) {
+            matchType = detectCategoryPossibleMatch(chestKey, targetCategoryId, blockEntity);
         }
         return matchType;
     }
@@ -302,6 +310,20 @@ public final class FindScanService {
         return MatchType.NONE;
     }
 
+    private static MatchType detectCategoryPossibleMatch(ChestKey chestKey, String targetCategoryId, BlockEntity blockEntity) {
+        if (targetCategoryId == null || targetCategoryId.isBlank()) {
+            return MatchType.NONE;
+        }
+        if (!TrackableStorage.isTrackableStorage(blockEntity)) {
+            return MatchType.NONE;
+        }
+        return LatchLabelClientState.tagStore()
+                .getTag(chestKey)
+                .filter(targetCategoryId::equals)
+                .map(unused -> MatchType.POSSIBLE)
+                .orElse(MatchType.NONE);
+    }
+
     private static boolean matchesBaseItem(ItemStack stack, Item targetItem) {
         return stack.getItem() == targetItem;
     }
@@ -313,6 +335,7 @@ public final class FindScanService {
     public enum MatchType {
         EXACT,
         VARIANT,
+        POSSIBLE,
         NONE
     }
 

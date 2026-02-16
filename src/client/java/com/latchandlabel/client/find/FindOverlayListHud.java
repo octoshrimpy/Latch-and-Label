@@ -64,7 +64,9 @@ public final class FindOverlayListHud {
 
             Text typeText = match.matchType() == FindScanService.MatchType.EXACT
                     ? Text.translatable("latchlabel.find.result_exact")
-                    : Text.translatable("latchlabel.find.result_variant");
+                    : (match.matchType() == FindScanService.MatchType.VARIANT
+                    ? Text.translatable("latchlabel.find.result_variant")
+                    : Text.translatable("latchlabel.find.result_possible"));
             context.drawTextWithShadow(
                     MinecraftClient.getInstance().textRenderer,
                     Text.translatable(

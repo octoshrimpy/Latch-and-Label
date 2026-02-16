@@ -1,5 +1,6 @@
 package com.latchandlabel.client.find;
 
+import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -44,6 +45,9 @@ public final class FindHighlightRenderer {
     private static final float VARIANT_R = 0.20f;
     private static final float VARIANT_G = 0.70f;
     private static final float VARIANT_B = 1.00f;
+    private static final float POSSIBLE_FALLBACK_R = 0.95f;
+    private static final float POSSIBLE_FALLBACK_G = 0.85f;
+    private static final float POSSIBLE_FALLBACK_B = 0.25f;
     private static final float FOCUS_R = 1.00f;
     private static final float FOCUS_G = 0.85f;
     private static final float FOCUS_B = 0.20f;
@@ -113,10 +117,15 @@ public final class FindHighlightRenderer {
                 r = EXACT_R;
                 g = EXACT_G;
                 b = EXACT_B;
-            } else {
+            } else if (match.matchType() == FindScanService.MatchType.VARIANT) {
                 r = VARIANT_R;
                 g = VARIANT_G;
                 b = VARIANT_B;
+            } else {
+                float[] categoryColor = resolveCategoryRgb(match.chestKey(), key);
+                r = categoryColor[0];
+                g = categoryColor[1];
+                b = categoryColor[2];
             }
 
             candidates.add(new RenderCandidate(key, box, distanceSq, focused, r, g, b));
@@ -170,5 +179,24 @@ public final class FindHighlightRenderer {
             float g,
             float b
     ) {
+    }
+
+    private static float[] resolveCategoryRgb(ChestKey originalKey, ChestKey normalizedKey) {
+        String categoryId = LatchLabelClientState.tagStore().getTag(originalKey)
+                .or(() -> LatchLabelClientState.tagStore().getTag(normalizedKey))
+                .orElse(null);
+        if (categoryId == null) {
+            return new float[]{POSSIBLE_FALLBACK_R, POSSIBLE_FALLBACK_G, POSSIBLE_FALLBACK_B};
+        }
+        return LatchLabelClientState.categoryStore()
+                .getById(categoryId)
+                .map(category -> {
+                    int color = category.color();
+                    float r = ((color >> 16) & 0xFF) / 255.0f;
+                    float g = ((color >> 8) & 0xFF) / 255.0f;
+                    float b = (color & 0xFF) / 255.0f;
+                    return new float[]{r, g, b};
+                })
+                .orElse(new float[]{POSSIBLE_FALLBACK_R, POSSIBLE_FALLBACK_G, POSSIBLE_FALLBACK_B});
     }
 }
