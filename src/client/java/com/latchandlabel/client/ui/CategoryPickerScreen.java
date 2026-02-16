@@ -31,6 +31,7 @@ public final class CategoryPickerScreen extends Screen {
     private static final int CATEGORY_ROWS = 8;
     private static final int MAX_VISIBLE_CATEGORIES = CATEGORY_COLUMNS * CATEGORY_ROWS;
     private static final int COLUMN_GAP = 8;
+    private static final int REMOVE_BUTTON_HEIGHT = 18;
     private static final int NEW_CATEGORY_COLOR = 0x9D9D97;
     private static final Identifier NEW_CATEGORY_ICON = Objects.requireNonNull(
             Identifier.tryParse("minecraft:writable_book"),
@@ -38,6 +39,7 @@ public final class CategoryPickerScreen extends Screen {
     );
 
     private final Screen parentScreen;
+    private final ChestKey chestKey;
     private final Consumer<String> onSelect;
     private final Runnable onClear;
     private final Runnable onCancel;
@@ -50,7 +52,7 @@ public final class CategoryPickerScreen extends Screen {
     public CategoryPickerScreen(Screen parentScreen, ChestKey chestKey, Consumer<String> onSelect, Runnable onClear, Runnable onCancel) {
         super(Text.translatable("screen.latchlabel.category_picker.title"));
         this.parentScreen = parentScreen;
-        Objects.requireNonNull(chestKey, "chestKey");
+        this.chestKey = Objects.requireNonNull(chestKey, "chestKey");
         this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
         this.onClear = Objects.requireNonNull(onClear, "onClear");
         this.onCancel = Objects.requireNonNull(onCancel, "onCancel");
@@ -79,6 +81,7 @@ public final class CategoryPickerScreen extends Screen {
         int panelLeft = (width - PANEL_WIDTH) / 2;
         int panelTop = (height - PANEL_HEIGHT) / 2;
         int listTop = panelTop + 48;
+        int removeButtonTop = panelTop + PANEL_HEIGHT - REMOVE_BUTTON_HEIGHT - 8;
 
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
         context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
@@ -95,6 +98,22 @@ public final class CategoryPickerScreen extends Screen {
             Category category = index < rows.size() ? rows.get(index) : null;
             drawCategoryCell(context, listLeft, columnWidth, listTop, index, category, mouseX, mouseY);
         }
+
+        int removeButtonLeft = panelLeft + 10;
+        int removeButtonRight = panelLeft + PANEL_WIDTH - 10;
+        boolean removeButtonHovered = isWithin(mouseX, mouseY, removeButtonLeft, removeButtonTop, removeButtonRight, removeButtonTop + REMOVE_BUTTON_HEIGHT);
+        boolean canClearCurrent = hasCurrentCategory();
+        int removeButtonFill = canClearCurrent
+                ? (removeButtonHovered ? 0xFF5A2323 : 0xFF432020)
+                : 0xFF2A2A2A;
+        int removeButtonStroke = canClearCurrent ? 0xFFBA5E5E : 0xFF555555;
+        int removeButtonTextColor = canClearCurrent ? 0xFFFFFFFF : 0xFF888888;
+
+        context.fill(removeButtonLeft, removeButtonTop, removeButtonRight, removeButtonTop + REMOVE_BUTTON_HEIGHT, removeButtonFill);
+        context.drawStrokedRectangle(removeButtonLeft, removeButtonTop, removeButtonRight - removeButtonLeft, REMOVE_BUTTON_HEIGHT, removeButtonStroke);
+        Text removeLabel = Text.translatable("screen.latchlabel.category_picker.remove_current");
+        int centeredTextX = removeButtonLeft + ((removeButtonRight - removeButtonLeft) - textRenderer.getWidth(removeLabel)) / 2;
+        context.drawTextWithShadow(textRenderer, removeLabel, centeredTextX, removeButtonTop + 5, removeButtonTextColor);
     }
 
     @Override
@@ -122,6 +141,9 @@ public final class CategoryPickerScreen extends Screen {
         int listLeft = panelLeft + 10;
         int listWidth = PANEL_WIDTH - 20;
         int columnWidth = (listWidth - COLUMN_GAP) / CATEGORY_COLUMNS;
+        int removeButtonTop = panelTop + PANEL_HEIGHT - REMOVE_BUTTON_HEIGHT - 8;
+        int removeButtonLeft = panelLeft + 10;
+        int removeButtonRight = panelLeft + PANEL_WIDTH - 10;
 
         List<Category> rows = visibleCategories();
 
@@ -151,6 +173,13 @@ public final class CategoryPickerScreen extends Screen {
                 selectAndClose(category.id());
                 return true;
             }
+        }
+
+        if (isWithin(mouseX, mouseY, removeButtonLeft, removeButtonTop, removeButtonRight, removeButtonTop + REMOVE_BUTTON_HEIGHT)) {
+            if (hasCurrentCategory()) {
+                clearAndClose();
+            }
+            return true;
         }
 
         return false;
@@ -322,6 +351,10 @@ public final class CategoryPickerScreen extends Screen {
         if (client != null) {
             client.setScreen(new CategoryItemMappingScreen(this, created));
         }
+    }
+
+    private boolean hasCurrentCategory() {
+        return LatchLabelClientState.tagStore().getTag(chestKey).isPresent();
     }
 
 }

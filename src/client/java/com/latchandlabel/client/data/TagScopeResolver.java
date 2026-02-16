@@ -11,8 +11,8 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 public final class TagScopeResolver {
-    private static final String MULTIPLAYER_PREFIX = "mp:";
-    private static final String SINGLEPLAYER_PREFIX = "sp:";
+    private static final String MULTIPLAYER_PREFIX = "mp_";
+    private static final String SINGLEPLAYER_PREFIX = "sp_";
 
     private TagScopeResolver() {
     }

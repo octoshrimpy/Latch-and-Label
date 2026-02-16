@@ -15,6 +15,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -28,10 +29,12 @@ public final class ConfigProfileManager {
 
     private final Path configDir;
     private final Path profilesDir;
+    private final Path scopesDir;
 
     public ConfigProfileManager() {
         this.configDir = FabricLoader.getInstance().getConfigDir().resolve(LatchLabel.MOD_ID);
         this.profilesDir = configDir.resolve("profiles");
+        this.scopesDir = configDir.resolve("scopes");
     }
 
     public Path exportProfile(String requestedName) {
@@ -48,6 +51,7 @@ public final class ConfigProfileManager {
             filesObject.add(entry.getKey(), readJsonObject(entry.getValue()));
         }
         root.add("files", filesObject);
+        root.add("scopedFiles", readScopedFiles());
 
         writeJsonObject(outputPath, root);
         return outputPath;
@@ -75,6 +79,7 @@ public final class ConfigProfileManager {
             }
             writeJsonObject(entry.getValue(), fileContent.getAsJsonObject());
         }
+        writeScopedFiles(root.get("scopedFiles"));
 
         reloadAll();
         return inputPath;
@@ -104,10 +109,45 @@ public final class ConfigProfileManager {
     private Map<String, Path> configFiles() {
         Map<String, Path> files = new LinkedHashMap<>();
         files.put("client_config.json", configDir.resolve("client_config.json"));
-        files.put("categories.json", configDir.resolve("categories.json"));
-        files.put("tags.json", configDir.resolve("tags.json"));
-        files.put("item_categories_overrides.json", configDir.resolve("item_categories_overrides.json"));
         return files;
+    }
+
+    private JsonObject readScopedFiles() {
+        JsonObject scoped = new JsonObject();
+        if (!Files.exists(scopesDir)) {
+            return scoped;
+        }
+        try (var stream = Files.walk(scopesDir)) {
+            stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .sorted(Comparator.comparing(path -> scopesDir.relativize(path).toString()))
+                    .forEach(path -> scoped.add(scopesDir.relativize(path).toString(), readJsonObject(path)));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed reading scoped files under " + scopesDir, e);
+        }
+        return scoped;
+    }
+
+    private void writeScopedFiles(JsonElement scopedFilesElement) {
+        if (scopedFilesElement == null || !scopedFilesElement.isJsonObject()) {
+            return;
+        }
+        JsonObject scopedFiles = scopedFilesElement.getAsJsonObject();
+        for (Map.Entry<String, JsonElement> entry : scopedFiles.entrySet()) {
+            if (!entry.getValue().isJsonObject()) {
+                continue;
+            }
+            Path relative = Path.of(entry.getKey()).normalize();
+            if (relative.isAbsolute()) {
+                continue;
+            }
+            Path target = scopesDir.resolve(relative).normalize();
+            if (!target.startsWith(scopesDir.normalize())) {
+                continue;
+            }
+            writeJsonObject(target, entry.getValue().getAsJsonObject());
+        }
     }
 
     private Path resolveProfilePath(String requestedName, boolean forExport) {

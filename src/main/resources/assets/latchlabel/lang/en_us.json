@@ -6,6 +6,7 @@
   "key.latchlabel.find_shortcut": "Run Find Shortcut",
   "screen.latchlabel.category_picker.title": "Category Picker",
   "screen.latchlabel.category_picker.new_category_name": "New Category",
+  "screen.latchlabel.category_picker.remove_current": "Remove Current Category",
   "screen.latchlabel.category_items.title": "Edit Items: %s",
   "screen.latchlabel.category_items.delete": "Delete",
   "screen.latchlabel.category_items.delete_confirm": "Are you sure you want to delete %s?",

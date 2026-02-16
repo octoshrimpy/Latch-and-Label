@@ -1,23 +1,9 @@
 package com.latchandlabel.client.tooltip;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.latchandlabel.client.LatchLabel;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 
-import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -28,8 +14,6 @@ import java.util.Optional;
 import java.util.Set;
 
 public final class ItemCategoryMappingService {
-    private static final int CURRENT_VERSION = 1;
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Map<String, String> LEGACY_CATEGORY_ID_REMAP = Map.of(
             "blocks", "stones",
             "decor", "decorative",
@@ -42,34 +26,18 @@ public final class ItemCategoryMappingService {
             "special_spawn", "mob_drops"
     );
 
-    private final Path overridesPath;
+    private Runnable changeListener = () -> {
+    };
     private Map<Identifier, String> defaultMappings = Map.of();
     private Map<Identifier, String> overrideMappings = new LinkedHashMap<>();
     private Set<Identifier> blockedMappings = new LinkedHashSet<>();
     private Map<Identifier, String> mergedMappings = Map.of();
 
-    public ItemCategoryMappingService() {
-        Path configDir = FabricLoader.getInstance().getConfigDir().resolve(LatchLabel.MOD_ID);
-        this.overridesPath = configDir.resolve("item_categories_overrides.json");
-    }
-
     public void initialize() {
-        try {
-            Files.createDirectories(overridesPath.getParent());
-        } catch (IOException e) {
-            throw new IllegalStateException("Unable to create config directory for item mapping", e);
-        }
-
-        if (!Files.exists(overridesPath)) {
-            writeDefaultOverridesSkeleton();
-        }
-
-        LoadedOverrides loaded = loadOverrides();
         defaultMappings = ItemCategoryMappings.createDefaults();
-        overrideMappings = new LinkedHashMap<>(loaded.overrides());
-        blockedMappings = new LinkedHashSet<>(loaded.blocked());
+        overrideMappings = new LinkedHashMap<>();
+        blockedMappings = new LinkedHashSet<>();
         rebuildMergedMappings();
-        LatchLabel.LOGGER.info("Loaded {} item-category mappings ({} overrides)", mergedMappings.size(), overrideMappings.size());
     }
 
     public void refreshDefaultMappingsIfExpanded() {
@@ -78,26 +46,18 @@ public final class ItemCategoryMappingService {
             return;
         }
 
-        int previous = defaultMappings.size();
         defaultMappings = refreshed;
         rebuildMergedMappings();
-        LatchLabel.LOGGER.info("Refreshed default item-category mappings: {} -> {}", previous, refreshed.size());
     }
 
     public void reload() {
-        LoadedOverrides loaded = loadOverrides();
+        // Reload-from-disk is handled by ClientDataManager scoped persistence.
         defaultMappings = ItemCategoryMappings.createDefaults();
-        overrideMappings = new LinkedHashMap<>(loaded.overrides());
-        blockedMappings = new LinkedHashSet<>(loaded.blocked());
         rebuildMergedMappings();
     }
 
     public void flushNow() {
-        writeOverrides();
-    }
-
-    public Path overridesPath() {
-        return overridesPath;
+        // Persisted by ClientDataManager.
     }
 
     public Optional<String> categoryIdFor(ItemStack stack) {
@@ -132,7 +92,7 @@ public final class ItemCategoryMappingService {
         blockedMappings.remove(itemId);
         overrideMappings.put(itemId, normalizedCategoryId);
         rebuildMergedMappings();
-        writeOverrides();
+        notifyChanged();
     }
 
     public boolean removeOverride(Identifier itemId) {
@@ -147,7 +107,7 @@ public final class ItemCategoryMappingService {
 
         blockedMappings.remove(itemId);
         rebuildMergedMappings();
-        writeOverrides();
+        notifyChanged();
         return true;
     }
 
@@ -159,7 +119,7 @@ public final class ItemCategoryMappingService {
         overrideMappings.remove(itemId);
         blockedMappings.add(itemId);
         rebuildMergedMappings();
-        writeOverrides();
+        notifyChanged();
     }
 
     public boolean isMappedToCategory(Identifier itemId, String categoryId) {
@@ -201,77 +161,37 @@ public final class ItemCategoryMappingService {
         boolean changed = overrideMappings.entrySet().removeIf(entry -> normalizedCategoryId.equals(entry.getValue()));
         if (changed) {
             rebuildMergedMappings();
-            writeOverrides();
+            notifyChanged();
         }
     }
 
-    private LoadedOverrides loadOverrides() {
-        JsonObject root;
-        try (Reader reader = Files.newBufferedReader(overridesPath, StandardCharsets.UTF_8)) {
-            JsonElement parsed = JsonParser.parseReader(reader);
-            if (parsed == null || !parsed.isJsonObject()) {
-                LatchLabel.LOGGER.warn("Invalid mapping overrides file {}, expected JSON object", overridesPath);
-                return LoadedOverrides.empty();
-            }
-            root = parsed.getAsJsonObject();
-        } catch (IOException e) {
-            LatchLabel.LOGGER.warn("Failed reading mapping overrides file {}", overridesPath, e);
-            return LoadedOverrides.empty();
-        }
-
-        int version = parseVersion(root);
-        if (version != CURRENT_VERSION) {
-            LatchLabel.LOGGER.warn(
-                    "Unsupported item mapping overrides version {} in {}, using compatibility mode",
-                    version,
-                    overridesPath
-            );
-        }
-
-        JsonElement overridesElement = root.get("overrides");
-        if (overridesElement == null || !overridesElement.isJsonObject()) {
-            return LoadedOverrides.empty();
-        }
-
-        Map<Identifier, String> parsedOverrides = new LinkedHashMap<>();
-        Set<Identifier> blocked = new LinkedHashSet<>();
-        for (Map.Entry<String, JsonElement> entry : overridesElement.getAsJsonObject().entrySet()) {
-            Identifier itemId = Identifier.tryParse(entry.getKey());
-            if (itemId == null || !Registries.ITEM.containsId(itemId)) {
-                LatchLabel.LOGGER.warn("Ignoring invalid override item id '{}'", entry.getKey());
-                continue;
-            }
-            if (entry.getValue().isJsonNull()) {
-                blocked.add(itemId);
-                continue;
-            }
-            if (!entry.getValue().isJsonPrimitive() || !entry.getValue().getAsJsonPrimitive().isString()) {
-                LatchLabel.LOGGER.warn("Ignoring invalid override category for item '{}'", entry.getKey());
-                continue;
-            }
-
-            String categoryId = normalizeCategoryId(entry.getValue().getAsString());
-            if (categoryId == null) {
-                LatchLabel.LOGGER.warn("Ignoring blank override category for item '{}'", entry.getKey());
-                continue;
-            }
-
-            parsedOverrides.put(itemId, categoryId);
-        }
-
-        return new LoadedOverrides(immutableMapCopy(parsedOverrides), immutableSetCopy(blocked));
+    public void applyScopedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
+        overrideMappings = new LinkedHashMap<>(Objects.requireNonNull(overrides, "overrides"));
+        blockedMappings = new LinkedHashSet<>(Objects.requireNonNull(blocked, "blocked"));
+        rebuildMergedMappings();
     }
 
-    private void writeDefaultOverridesSkeleton() {
-        JsonObject root = new JsonObject();
-        root.addProperty("version", CURRENT_VERSION);
-        root.add("overrides", new JsonObject());
+    public Map<Identifier, String> snapshotOverrides() {
+        return immutableMapCopy(overrideMappings);
+    }
 
-        try (Writer writer = Files.newBufferedWriter(overridesPath, StandardCharsets.UTF_8)) {
-            GSON.toJson(root, writer);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed writing default mapping overrides file: " + overridesPath, e);
+    public Set<Identifier> snapshotBlockedMappings() {
+        return immutableSetCopy(blockedMappings);
+    }
+
+    public void setChangeListener(Runnable changeListener) {
+        this.changeListener = Objects.requireNonNull(changeListener, "changeListener");
+    }
+
+    public static String normalizeCategoryId(String categoryId) {
+        if (categoryId == null) {
+            return null;
         }
+        String normalized = categoryId.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return LEGACY_CATEGORY_ID_REMAP.getOrDefault(normalized, normalized);
     }
 
     private void rebuildMergedMappings() {
@@ -283,32 +203,8 @@ public final class ItemCategoryMappingService {
         mergedMappings = immutableMapCopy(defaults);
     }
 
-    private void writeOverrides() {
-        JsonObject root = new JsonObject();
-        root.addProperty("version", CURRENT_VERSION);
-
-        JsonObject overrides = new JsonObject();
-        for (Identifier blockedItemId : blockedMappings) {
-            overrides.add(blockedItemId.toString(), JsonNull.INSTANCE);
-        }
-        for (Map.Entry<Identifier, String> entry : overrideMappings.entrySet()) {
-            overrides.addProperty(entry.getKey().toString(), entry.getValue());
-        }
-        root.add("overrides", overrides);
-
-        try (Writer writer = Files.newBufferedWriter(overridesPath, StandardCharsets.UTF_8)) {
-            GSON.toJson(root, writer);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed writing mapping overrides file: " + overridesPath, e);
-        }
-    }
-
-    private static int parseVersion(JsonObject root) {
-        JsonElement versionElement = root.get("version");
-        if (versionElement == null || !versionElement.isJsonPrimitive() || !versionElement.getAsJsonPrimitive().isNumber()) {
-            return -1;
-        }
-        return versionElement.getAsInt();
+    private void notifyChanged() {
+        changeListener.run();
     }
 
     private static <K, V> Map<K, V> immutableMapCopy(Map<K, V> source) {
@@ -317,22 +213,5 @@ public final class ItemCategoryMappingService {
 
     private static <T> Set<T> immutableSetCopy(Set<T> source) {
         return Collections.unmodifiableSet(new LinkedHashSet<>(source));
-    }
-
-    private record LoadedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
-        private static LoadedOverrides empty() {
-            return new LoadedOverrides(Map.of(), Set.of());
-        }
-    }
-
-    private static String normalizeCategoryId(String categoryId) {
-        if (categoryId == null) {
-            return null;
-        }
-        String normalized = categoryId.trim().toLowerCase(Locale.ROOT);
-        if (normalized.isEmpty()) {
-            return null;
-        }
-        return LEGACY_CATEGORY_ID_REMAP.getOrDefault(normalized, normalized);
     }
 }

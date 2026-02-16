@@ -32,7 +32,7 @@ public final class ClientHooks {
         FindOverlayListHud.register();
         FocusedTagBillboardRenderer.registerHud();
         ClientTickEvents.END_CLIENT_TICK.register(client ->
-                LatchLabelClientState.tagStore().setActiveScopeId(TagScopeResolver.resolveCurrentScopeId(client))
+                LatchLabelClientState.dataManager().setActiveScopeId(TagScopeResolver.resolveCurrentScopeId(client))
         );
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);

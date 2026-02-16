@@ -3,6 +3,7 @@ package com.latchandlabel.client.data;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -11,7 +12,9 @@ import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.CategoryStore;
 import com.latchandlabel.client.store.TagStore;
+import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 
 import java.io.IOException;
@@ -22,8 +25,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -40,6 +45,9 @@ public final class ClientDataManager implements AutoCloseable {
             Identifier.tryParse("minecraft:stone"),
             "Invalid fallback identifier"
     );
+    private static final String SCOPES_DIR_NAME = "scopes";
+    private static final String TAGS_FILE_NAME = "tags.json";
+    private static final String CATEGORIES_AND_OVERRIDES_FILE_NAME = "categories_and_overrides.json";
 
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
@@ -63,24 +71,35 @@ public final class ClientDataManager implements AutoCloseable {
 
     private final CategoryStore categoryStore;
     private final TagStore tagStore;
+    private final ItemCategoryMappingService itemCategoryMappingService;
     private final Path configDir;
-    private final Path categoriesFilePath;
-    private final Path tagsFilePath;
+    private final Path scopesDir;
+    private final Path legacyCategoriesFilePath;
+    private final Path legacyTagsFilePath;
+    private final Path legacyOverridesFilePath;
     private final ScheduledExecutorService saveExecutor;
     private final Object saveLock = new Object();
 
+    private String activeScopeId = TagStore.DEFAULT_SCOPE_ID;
     private ScheduledFuture<?> pendingSave;
     private boolean initialized;
     private boolean closed;
     private boolean suppressSaveScheduling;
 
-    public ClientDataManager(CategoryStore categoryStore, TagStore tagStore) {
+    public ClientDataManager(
+            CategoryStore categoryStore,
+            TagStore tagStore,
+            ItemCategoryMappingService itemCategoryMappingService
+    ) {
         this.categoryStore = Objects.requireNonNull(categoryStore, "categoryStore");
         this.tagStore = Objects.requireNonNull(tagStore, "tagStore");
+        this.itemCategoryMappingService = Objects.requireNonNull(itemCategoryMappingService, "itemCategoryMappingService");
 
         this.configDir = FabricLoader.getInstance().getConfigDir().resolve(LatchLabel.MOD_ID);
-        this.categoriesFilePath = configDir.resolve("categories.json");
-        this.tagsFilePath = configDir.resolve("tags.json");
+        this.scopesDir = configDir.resolve(SCOPES_DIR_NAME);
+        this.legacyCategoriesFilePath = configDir.resolve("categories.json");
+        this.legacyTagsFilePath = configDir.resolve("tags.json");
+        this.legacyOverridesFilePath = configDir.resolve("item_categories_overrides.json");
 
         ThreadFactory threadFactory = runnable -> {
             Thread thread = new Thread(runnable, "latchlabel-save-worker");
@@ -98,18 +117,40 @@ public final class ClientDataManager implements AutoCloseable {
 
         try {
             Files.createDirectories(configDir);
+            Files.createDirectories(scopesDir);
         } catch (IOException e) {
             throw new IllegalStateException("Unable to create config directory: " + configDir, e);
         }
 
-        loadCategories();
-        loadTags();
+        loadActiveScopeData();
 
         categoryStore.setChangeListener(this::scheduleSave);
         tagStore.setChangeListener(this::scheduleSave);
+        itemCategoryMappingService.setChangeListener(this::scheduleSave);
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownFlush, "latchlabel-save-shutdown"));
-        LatchLabel.LOGGER.info("Loaded client data from {}", configDir);
+        LatchLabel.LOGGER.info("Loaded scoped client data from {}", scopesDir);
+    }
+
+    public void setActiveScopeId(String scopeId) {
+        String normalizedScopeId = normalizeScopeId(scopeId);
+
+        synchronized (saveLock) {
+            if (closed || !initialized) {
+                return;
+            }
+            if (Objects.equals(activeScopeId, normalizedScopeId)) {
+                return;
+            }
+            if (pendingSave != null) {
+                pendingSave.cancel(false);
+                pendingSave = null;
+            }
+        }
+
+        flushNow();
+        activeScopeId = normalizedScopeId;
+        runWithSaveSchedulingSuppressed(this::loadActiveScopeData);
     }
 
     public void scheduleSave() {
@@ -130,14 +171,13 @@ public final class ClientDataManager implements AutoCloseable {
             if (closed) {
                 return;
             }
-
             if (pendingSave != null) {
                 pendingSave.cancel(false);
                 pendingSave = null;
             }
         }
 
-        writeCategories();
+        writeCategoriesAndOverrides();
         writeTags();
     }
 
@@ -146,16 +186,12 @@ public final class ClientDataManager implements AutoCloseable {
             if (closed || !initialized) {
                 return;
             }
-
             if (pendingSave != null) {
                 pendingSave.cancel(false);
                 pendingSave = null;
             }
         }
-        runWithSaveSchedulingSuppressed(() -> {
-            loadCategories();
-            loadTags();
-        });
+        runWithSaveSchedulingSuppressed(this::loadActiveScopeData);
     }
 
     @Override
@@ -165,14 +201,13 @@ public final class ClientDataManager implements AutoCloseable {
                 return;
             }
             closed = true;
-
             if (pendingSave != null) {
                 pendingSave.cancel(false);
                 pendingSave = null;
             }
         }
 
-        writeCategories();
+        writeCategoriesAndOverrides();
         writeTags();
         saveExecutor.shutdown();
     }
@@ -206,115 +241,158 @@ public final class ClientDataManager implements AutoCloseable {
         }
     }
 
-    private void loadCategories() {
-        if (!Files.exists(categoriesFilePath)) {
+    private void loadActiveScopeData() {
+        tagStore.setActiveScopeId(activeScopeId);
+        loadCategoriesAndOverrides();
+        loadTags();
+    }
+
+    private void loadCategoriesAndOverrides() {
+        Path filePath = categoriesAndOverridesFilePathForScope(activeScopeId);
+
+        if (!Files.exists(filePath)) {
+            if (TagStore.DEFAULT_SCOPE_ID.equals(activeScopeId)
+                    && (Files.exists(legacyCategoriesFilePath) || Files.exists(legacyOverridesFilePath))) {
+                loadLegacyCategoriesAndOverrides();
+                writeCategoriesAndOverrides();
+                return;
+            }
+
             categoryStore.replaceAll(DefaultCategories.create());
-            writeCategories();
+            itemCategoryMappingService.applyScopedOverrides(Map.of(), Set.of());
+            writeCategoriesAndOverrides();
             return;
         }
 
         JsonObject root;
         try {
-            root = readJsonObject(categoriesFilePath);
+            root = readJsonObject(filePath);
         } catch (IllegalStateException e) {
-            LatchLabel.LOGGER.warn("Invalid categories file {}, using defaults", categoriesFilePath, e);
+            LatchLabel.LOGGER.warn("Invalid scoped categories file {}, using defaults", filePath, e);
             categoryStore.replaceAll(DefaultCategories.create());
-            writeCategories();
+            itemCategoryMappingService.applyScopedOverrides(Map.of(), Set.of());
+            writeCategoriesAndOverrides();
             return;
         }
-        int version = parseVersion(root, categoriesFilePath);
+        int version = parseVersion(root, filePath);
 
-        List<Category> categories = new ArrayList<>();
-        JsonElement categoriesElement = root.get("categories");
-        if (categoriesElement != null && categoriesElement.isJsonArray()) {
-            for (JsonElement element : categoriesElement.getAsJsonArray()) {
-                if (!element.isJsonObject()) {
-                    continue;
-                }
-                Category category = parseCategory(element.getAsJsonObject());
-                if (category != null) {
-                    categories.add(category);
-                }
-            }
-        }
-
+        List<Category> categories = parseCategories(root.get("categories"));
         if (categories.isEmpty()) {
             categories = DefaultCategories.create();
-            LatchLabel.LOGGER.warn("No valid categories found in {}, using defaults", categoriesFilePath);
         }
         if (isLegacyDefaultCategorySet(categories)) {
             categories = DefaultCategories.create();
-            writeCategories();
-            LatchLabel.LOGGER.info("Migrated legacy default categories to new defaults in {}", categoriesFilePath);
         }
+
+        ParsedOverrides parsedOverrides = parseItemOverrides(root.get("itemOverrides"));
 
         if (version != CURRENT_VERSION) {
             LatchLabel.LOGGER.warn(
-                    "Unsupported categories.json version {} in {}; using compatibility load path",
+                    "Unsupported categories_and_overrides version {} in {}; using compatibility load path",
                     version,
-                    categoriesFilePath
+                    filePath
             );
         }
 
         categoryStore.replaceAll(categories);
+        itemCategoryMappingService.applyScopedOverrides(parsedOverrides.overrides(), parsedOverrides.blocked());
+    }
+
+    private void loadLegacyCategoriesAndOverrides() {
+        List<Category> categories = readLegacyCategories();
+        if (categories.isEmpty()) {
+            categories = DefaultCategories.create();
+        }
+        if (isLegacyDefaultCategorySet(categories)) {
+            categories = DefaultCategories.create();
+        }
+
+        ParsedOverrides overrides = readLegacyOverrides();
+        categoryStore.replaceAll(categories);
+        itemCategoryMappingService.applyScopedOverrides(overrides.overrides(), overrides.blocked());
     }
 
     private void loadTags() {
-        if (!Files.exists(tagsFilePath)) {
-            tagStore.replaceAllScopes(Map.of(), Map.of(), tagStore.getActiveScopeId());
+        Path filePath = tagsFilePathForScope(activeScopeId);
+        if (!Files.exists(filePath)) {
+            if (Files.exists(legacyTagsFilePath)) {
+                loadLegacyTags(activeScopeId);
+                writeTags();
+                return;
+            }
+            tagStore.replaceAll(Map.of(), null);
             writeTags();
             return;
         }
 
         JsonObject root;
         try {
-            root = readJsonObject(tagsFilePath);
+            root = readJsonObject(filePath);
         } catch (IllegalStateException e) {
-            LatchLabel.LOGGER.warn("Invalid tags file {}, using empty state", tagsFilePath, e);
-            tagStore.replaceAllScopes(Map.of(), Map.of(), tagStore.getActiveScopeId());
+            LatchLabel.LOGGER.warn("Invalid scoped tags file {}, using empty state", filePath, e);
+            tagStore.replaceAll(Map.of(), null);
             writeTags();
             return;
         }
-        int version = parseVersion(root, tagsFilePath);
+        int version = parseVersion(root, filePath);
 
-        Map<String, Map<ChestKey, String>> parsedTagsByScope = new HashMap<>();
-        Map<String, String> parsedLastUsedByScope = new HashMap<>();
-        JsonElement scopesElement = root.get("scopes");
-        if (scopesElement != null && scopesElement.isJsonObject()) {
-            for (Map.Entry<String, JsonElement> scopeEntry : scopesElement.getAsJsonObject().entrySet()) {
-                if (!scopeEntry.getValue().isJsonObject()) {
-                    continue;
-                }
-                String scopeId = scopeEntry.getKey();
-                JsonObject scopeObject = scopeEntry.getValue().getAsJsonObject();
-                Map<ChestKey, String> parsedScopeTags = parseTagsObject(scopeObject.get("tags"));
-                parsedTagsByScope.put(scopeId, parsedScopeTags);
-                String lastUsedCategoryId = remapLegacyCategoryId(asString(scopeObject.get("lastUsedCategoryId")));
-                if (lastUsedCategoryId != null && !lastUsedCategoryId.isBlank()) {
-                    parsedLastUsedByScope.put(scopeId, lastUsedCategoryId);
-                }
-            }
-        } else {
-            // Legacy format: root-level tags + lastUsedCategoryId.
-            parsedTagsByScope.put(TagStore.DEFAULT_SCOPE_ID, parseTagsObject(root.get("tags")));
-            String legacyLastUsedCategoryId = remapLegacyCategoryId(asString(root.get("lastUsedCategoryId")));
-            if (legacyLastUsedCategoryId != null && !legacyLastUsedCategoryId.isBlank()) {
-                parsedLastUsedByScope.put(TagStore.DEFAULT_SCOPE_ID, legacyLastUsedCategoryId);
-            }
-        }
+        Map<ChestKey, String> parsedTags = parseTagsObject(root.get("tags"), filePath);
+        String lastUsedCategoryId = remapLegacyCategoryId(asString(root.get("lastUsedCategoryId")));
 
         if (version != CURRENT_VERSION) {
             LatchLabel.LOGGER.warn(
-                    "Unsupported tags.json version {} in {}; using compatibility load path",
+                    "Unsupported tags version {} in {}; using compatibility load path",
                     version,
-                    tagsFilePath
+                    filePath
             );
         }
 
-        tagStore.replaceAllScopes(parsedTagsByScope, parsedLastUsedByScope, tagStore.getActiveScopeId());
+        tagStore.replaceAll(parsedTags, lastUsedCategoryId);
     }
 
-    private void writeCategories() {
+    private void loadLegacyTags(String scopeId) {
+        JsonObject root;
+        try {
+            root = readJsonObject(legacyTagsFilePath);
+        } catch (IllegalStateException e) {
+            LatchLabel.LOGGER.warn("Invalid legacy tags file {}, using empty state", legacyTagsFilePath, e);
+            tagStore.replaceAll(Map.of(), null);
+            return;
+        }
+
+        JsonElement scopesElement = root.get("scopes");
+        if (scopesElement != null && scopesElement.isJsonObject()) {
+            JsonObject scopes = scopesElement.getAsJsonObject();
+            JsonObject selectedScope = null;
+            JsonElement selected = scopes.get(scopeId);
+            if (selected != null && selected.isJsonObject()) {
+                selectedScope = selected.getAsJsonObject();
+            } else {
+                JsonElement global = scopes.get(TagStore.DEFAULT_SCOPE_ID);
+                if (global != null && global.isJsonObject()) {
+                    selectedScope = global.getAsJsonObject();
+                }
+            }
+            if (selectedScope == null) {
+                tagStore.replaceAll(Map.of(), null);
+                return;
+            }
+
+            Map<ChestKey, String> parsedTags = parseTagsObject(selectedScope.get("tags"), legacyTagsFilePath);
+            String lastUsedCategoryId = remapLegacyCategoryId(asString(selectedScope.get("lastUsedCategoryId")));
+            tagStore.replaceAll(parsedTags, lastUsedCategoryId);
+            return;
+        }
+
+        Map<ChestKey, String> parsedTags = parseTagsObject(root.get("tags"), legacyTagsFilePath);
+        String lastUsedCategoryId = remapLegacyCategoryId(asString(root.get("lastUsedCategoryId")));
+        tagStore.replaceAll(parsedTags, lastUsedCategoryId);
+    }
+
+    private void writeCategoriesAndOverrides() {
+        Path filePath = categoriesAndOverridesFilePathForScope(activeScopeId);
+        ensureScopeDirectory(filePath.getParent());
+
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
@@ -329,40 +407,87 @@ public final class ClientDataManager implements AutoCloseable {
             categoryObject.addProperty("visible", category.visible());
             serializedCategories.add(categoryObject);
         }
-
         root.add("categories", serializedCategories);
-        writeJsonObject(categoriesFilePath, root);
+
+        JsonObject itemOverrides = new JsonObject();
+        for (Identifier blockedItemId : itemCategoryMappingService.snapshotBlockedMappings()) {
+            itemOverrides.add(blockedItemId.toString(), JsonNull.INSTANCE);
+        }
+        for (Map.Entry<Identifier, String> entry : itemCategoryMappingService.snapshotOverrides().entrySet()) {
+            itemOverrides.addProperty(entry.getKey().toString(), entry.getValue());
+        }
+        root.add("itemOverrides", itemOverrides);
+
+        writeJsonObject(filePath, root);
     }
 
     private void writeTags() {
+        Path filePath = tagsFilePathForScope(activeScopeId);
+        ensureScopeDirectory(filePath.getParent());
+
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
-        JsonObject scopesObject = new JsonObject();
-        Map<String, Map<ChestKey, String>> tagsByScope = tagStore.snapshotAllTagsByScope();
-        Map<String, String> lastUsedByScope = tagStore.snapshotLastUsedCategoryIdByScope();
-        Set<String> scopeIds = new HashSet<>(tagsByScope.keySet());
-        scopeIds.addAll(lastUsedByScope.keySet());
-        for (String scopeId : scopeIds) {
-            JsonObject scopeObject = new JsonObject();
-            JsonObject tagsObject = new JsonObject();
-            for (Map.Entry<ChestKey, String> entry : tagsByScope.getOrDefault(scopeId, Map.of()).entrySet()) {
-                tagsObject.addProperty(entry.getKey().toStringKey(), entry.getValue());
-            }
-            scopeObject.add("tags", tagsObject);
-
-            String lastUsedCategoryId = remapLegacyCategoryId(lastUsedByScope.get(scopeId));
-            if (lastUsedCategoryId != null && !lastUsedCategoryId.isBlank()) {
-                scopeObject.addProperty("lastUsedCategoryId", lastUsedCategoryId);
-            }
-            scopesObject.add(scopeId, scopeObject);
+        JsonObject tagsObject = new JsonObject();
+        for (Map.Entry<ChestKey, String> entry : tagStore.snapshotTags().entrySet()) {
+            tagsObject.addProperty(entry.getKey().toStringKey(), entry.getValue());
         }
-        root.add("scopes", scopesObject);
+        root.add("tags", tagsObject);
+        tagStore.getLastUsedCategoryId().ifPresent(value -> root.addProperty("lastUsedCategoryId", value));
 
-        writeJsonObject(tagsFilePath, root);
+        writeJsonObject(filePath, root);
     }
 
-    private Map<ChestKey, String> parseTagsObject(JsonElement tagsElement) {
+    private List<Category> readLegacyCategories() {
+        if (!Files.exists(legacyCategoriesFilePath)) {
+            return DefaultCategories.create();
+        }
+        JsonObject root;
+        try {
+            root = readJsonObject(legacyCategoriesFilePath);
+        } catch (IllegalStateException e) {
+            LatchLabel.LOGGER.warn("Invalid legacy categories file {}, using defaults", legacyCategoriesFilePath, e);
+            return DefaultCategories.create();
+        }
+        return parseCategories(root.get("categories"));
+    }
+
+    private ParsedOverrides readLegacyOverrides() {
+        if (!Files.exists(legacyOverridesFilePath)) {
+            return ParsedOverrides.empty();
+        }
+        JsonObject root;
+        try {
+            root = readJsonObject(legacyOverridesFilePath);
+        } catch (IllegalStateException e) {
+            LatchLabel.LOGGER.warn("Invalid legacy overrides file {}, using empty overrides", legacyOverridesFilePath, e);
+            return ParsedOverrides.empty();
+        }
+        JsonElement source = root.get("itemOverrides");
+        if (source == null) {
+            source = root.get("overrides");
+        }
+        return parseItemOverrides(source);
+    }
+
+    private List<Category> parseCategories(JsonElement categoriesElement) {
+        List<Category> categories = new ArrayList<>();
+        if (categoriesElement == null || !categoriesElement.isJsonArray()) {
+            return categories;
+        }
+        for (JsonElement element : categoriesElement.getAsJsonArray()) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            Category category = parseCategory(element.getAsJsonObject());
+            if (category != null) {
+                categories.add(category);
+            }
+        }
+        return categories;
+    }
+
+    private Map<ChestKey, String> parseTagsObject(JsonElement tagsElement, Path sourcePath) {
         Map<ChestKey, String> parsedTags = new HashMap<>();
         if (tagsElement == null || !tagsElement.isJsonObject()) {
             return parsedTags;
@@ -377,10 +502,40 @@ public final class ClientDataManager implements AutoCloseable {
             try {
                 parsedTags.put(ChestKey.fromStringKey(entry.getKey()), categoryId);
             } catch (IllegalArgumentException ex) {
-                LatchLabel.LOGGER.warn("Skipping invalid chest key '{}' in tags file", entry.getKey());
+                LatchLabel.LOGGER.warn("Skipping invalid chest key '{}' in {}", entry.getKey(), sourcePath);
             }
         }
         return parsedTags;
+    }
+
+    private ParsedOverrides parseItemOverrides(JsonElement overridesElement) {
+        if (overridesElement == null || !overridesElement.isJsonObject()) {
+            return ParsedOverrides.empty();
+        }
+
+        Map<Identifier, String> parsedOverrides = new LinkedHashMap<>();
+        Set<Identifier> blocked = new LinkedHashSet<>();
+        for (Map.Entry<String, JsonElement> entry : overridesElement.getAsJsonObject().entrySet()) {
+            Identifier itemId = Identifier.tryParse(entry.getKey());
+            if (itemId == null || !Registries.ITEM.containsId(itemId)) {
+                continue;
+            }
+            if (entry.getValue().isJsonNull()) {
+                blocked.add(itemId);
+                continue;
+            }
+            if (!entry.getValue().isJsonPrimitive() || !entry.getValue().getAsJsonPrimitive().isString()) {
+                continue;
+            }
+
+            String categoryId = ItemCategoryMappingService.normalizeCategoryId(entry.getValue().getAsString());
+            categoryId = remapLegacyCategoryId(categoryId);
+            if (categoryId == null || categoryId.isBlank()) {
+                continue;
+            }
+            parsedOverrides.put(itemId, categoryId);
+        }
+        return new ParsedOverrides(Map.copyOf(parsedOverrides), Set.copyOf(blocked));
     }
 
     private static JsonObject readJsonObject(Path path) {
@@ -476,5 +631,51 @@ public final class ClientDataManager implements AutoCloseable {
             return null;
         }
         return LEGACY_CATEGORY_ID_REMAP.getOrDefault(categoryId, categoryId);
+    }
+
+    private Path scopeDirectory(String scopeId) {
+        return scopesDir.resolve(normalizeScopeId(scopeId));
+    }
+
+    private Path tagsFilePathForScope(String scopeId) {
+        return scopeDirectory(scopeId).resolve(TAGS_FILE_NAME);
+    }
+
+    private Path categoriesAndOverridesFilePathForScope(String scopeId) {
+        return scopeDirectory(scopeId).resolve(CATEGORIES_AND_OVERRIDES_FILE_NAME);
+    }
+
+    private static void ensureScopeDirectory(Path scopeDir) {
+        try {
+            Files.createDirectories(scopeDir);
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to create scope directory: " + scopeDir, e);
+        }
+    }
+
+    private static String normalizeScopeId(String scopeId) {
+        if (scopeId == null || scopeId.isBlank()) {
+            return TagStore.DEFAULT_SCOPE_ID;
+        }
+        String trimmed = scopeId.trim().toLowerCase(Locale.ROOT);
+        StringBuilder normalized = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char current = trimmed.charAt(i);
+            if ((current >= 'a' && current <= 'z') || (current >= '0' && current <= '9') || current == '.' || current == '-' || current == '_') {
+                normalized.append(current);
+            } else {
+                normalized.append('_');
+            }
+        }
+        if (normalized.length() == 0) {
+            return TagStore.DEFAULT_SCOPE_ID;
+        }
+        return normalized.toString();
+    }
+
+    private record ParsedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
+        private static ParsedOverrides empty() {
+            return new ParsedOverrides(Map.of(), Set.of());
+        }
     }
 }

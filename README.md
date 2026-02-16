@@ -52,11 +52,12 @@ All config files are under:
 
 Primary files:
 - `client_config.json`
-- `categories.json`
-- `tags.json`
-- `item_categories_overrides.json`
+- `scopes/<server-or-world>/tags.json`
+- `scopes/<server-or-world>/categories_and_overrides.json`
 
-`tags.json` stores container tags under per-scope buckets (multiplayer server or singleplayer world). Inside each scope, keys are `dimension|x,y,z`.
+Each scope folder corresponds to one multiplayer server or one singleplayer world.
+- `tags.json` stores `dimension|x,y,z -> categoryId` mappings for that scope.
+- `categories_and_overrides.json` stores category definitions and item-category overrides for that scope.
 
 Reload config in-game with:
 - `/latchlabel reload`

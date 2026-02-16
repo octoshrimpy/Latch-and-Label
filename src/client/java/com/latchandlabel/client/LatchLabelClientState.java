@@ -10,18 +10,18 @@ import com.latchandlabel.client.store.TagStore;
 public final class LatchLabelClientState {
     private static final CategoryStore CATEGORY_STORE = new CategoryStore();
     private static final TagStore TAG_STORE = new TagStore();
-    private static final ClientDataManager DATA_MANAGER = new ClientDataManager(CATEGORY_STORE, TAG_STORE);
+    private static final ItemCategoryMappingService ITEM_CATEGORY_MAPPING_SERVICE = new ItemCategoryMappingService();
+    private static final ClientDataManager DATA_MANAGER = new ClientDataManager(CATEGORY_STORE, TAG_STORE, ITEM_CATEGORY_MAPPING_SERVICE);
     private static final ClientConfigManager CLIENT_CONFIG_MANAGER = new ClientConfigManager();
     private static final ConfigProfileManager CONFIG_PROFILE_MANAGER = new ConfigProfileManager();
-    private static final ItemCategoryMappingService ITEM_CATEGORY_MAPPING_SERVICE = new ItemCategoryMappingService();
 
     private LatchLabelClientState() {
     }
 
     public static void initialize() {
         CLIENT_CONFIG_MANAGER.initialize();
-        DATA_MANAGER.initialize();
         ITEM_CATEGORY_MAPPING_SERVICE.initialize();
+        DATA_MANAGER.initialize();
     }
 
     public static CategoryStore categoryStore() {

@@ -3,11 +3,13 @@ package com.latchandlabel.client.model;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.Locale;
 import java.util.Objects;
 
 public record ChestKey(Identifier dimensionId, BlockPos pos) {
     private static final String DELIMITER = "|";
     private static final String COORD_DELIMITER = ",";
+    private static final String VANILLA_NAMESPACE = "minecraft";
 
     public ChestKey {
         Objects.requireNonNull(dimensionId, "dimensionId");
@@ -15,7 +17,9 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
     }
 
     public String toStringKey() {
-        return dimensionId + DELIMITER + pos.getX() + COORD_DELIMITER + pos.getY() + COORD_DELIMITER + pos.getZ();
+        return serializeDimensionId(dimensionId)
+                + DELIMITER
+                + pos.getX() + COORD_DELIMITER + pos.getY() + COORD_DELIMITER + pos.getZ();
     }
 
     public static ChestKey fromStringKey(String raw) {
@@ -26,7 +30,7 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
             throw new IllegalArgumentException("Invalid chest key format: " + raw);
         }
 
-        Identifier dimensionId = Identifier.tryParse(keyParts[0]);
+        Identifier dimensionId = parseDimensionId(keyParts[0]);
         if (dimensionId == null) {
             throw new IllegalArgumentException("Invalid dimension identifier in chest key: " + raw);
         }
@@ -44,5 +48,28 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid number in chest key: " + raw, ex);
         }
+    }
+
+    private static String serializeDimensionId(Identifier id) {
+        return id.getNamespace() + ":" + id.getPath();
+    }
+
+    private static Identifier parseDimensionId(String rawDimensionId) {
+        if (rawDimensionId == null) {
+            return null;
+        }
+
+        String normalized = rawDimensionId.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        Identifier parsed = Identifier.tryParse(normalized);
+        if (parsed != null) {
+            return parsed;
+        }
+
+        // Legacy support for older saves that stored only the dimension path.
+        return Identifier.tryParse(VANILLA_NAMESPACE + ":" + normalized);
     }
 }
