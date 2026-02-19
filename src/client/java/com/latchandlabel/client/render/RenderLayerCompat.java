@@ -1,120 +1,130 @@
 package com.latchandlabel.client.render;
 
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderLayers;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.Predicate;
 
 public final class RenderLayerCompat {
-    private static final Method RENDER_LAYERS_LINES;
-    private static final Method RENDER_LAYERS_DEBUG_FILLED_BOX;
-    private static final Field RENDER_LAYERS_LINES_FIELD;
-    private static final Field RENDER_LAYERS_DEBUG_FILLED_BOX_FIELD;
-    private static final Method RENDER_LAYER_GET_LINES;
-    private static final Method RENDER_LAYER_GET_DEBUG_FILLED_BOX;
-
-    static {
-        Method renderLayersLines = null;
-        Method renderLayersDebugFilledBox = null;
-        Field renderLayersLinesField = null;
-        Field renderLayersDebugFilledBoxField = null;
-        Method renderLayerGetLines = null;
-        Method renderLayerGetDebugFilledBox = null;
-
-        try {
-            Class<?> renderLayersClass = Class.forName("net.minecraft.client.render.RenderLayers");
-            renderLayersLines = findMethod(renderLayersClass, "lines");
-            renderLayersDebugFilledBox = findMethod(renderLayersClass, "debugFilledBox");
-            renderLayersLinesField = findField(renderLayersClass, "LINES");
-            renderLayersDebugFilledBoxField = findField(renderLayersClass, "DEBUG_FILLED_BOX");
-        } catch (ClassNotFoundException ignored) {
-        }
-
-        try {
-            Class<?> renderLayerClass = Class.forName("net.minecraft.client.render.RenderLayer");
-            renderLayerGetLines = findMethod(renderLayerClass, "getLines");
-            renderLayerGetDebugFilledBox = findMethod(renderLayerClass, "getDebugFilledBox");
-        } catch (ClassNotFoundException ignored) {
-        }
-
-        RENDER_LAYERS_LINES = renderLayersLines;
-        RENDER_LAYERS_DEBUG_FILLED_BOX = renderLayersDebugFilledBox;
-        RENDER_LAYERS_LINES_FIELD = renderLayersLinesField;
-        RENDER_LAYERS_DEBUG_FILLED_BOX_FIELD = renderLayersDebugFilledBoxField;
-        RENDER_LAYER_GET_LINES = renderLayerGetLines;
-        RENDER_LAYER_GET_DEBUG_FILLED_BOX = renderLayerGetDebugFilledBox;
-    }
+    private static volatile RenderLayer linesLayer;
+    private static volatile RenderLayer debugFilledBoxLayer;
 
     private RenderLayerCompat() {
     }
 
     public static RenderLayer lines() {
-        RenderLayer layer = invokeLayer(RENDER_LAYERS_LINES);
-        if (layer != null) {
-            return layer;
+        RenderLayer cached = linesLayer;
+        if (cached != null) {
+            return cached;
         }
-        layer = readLayer(RENDER_LAYERS_LINES_FIELD);
-        if (layer != null) {
-            return layer;
+        synchronized (RenderLayerCompat.class) {
+            if (linesLayer == null) {
+                linesLayer = resolveLayer(name -> name.contains("lines") && !name.contains("translucent"));
+            }
+            return linesLayer;
         }
-        layer = invokeLayer(RENDER_LAYER_GET_LINES);
-        if (layer != null) {
-            return layer;
-        }
-        throw new IllegalStateException("Unable to resolve lines render layer");
     }
 
     public static RenderLayer debugFilledBox() {
-        RenderLayer layer = invokeLayer(RENDER_LAYERS_DEBUG_FILLED_BOX);
-        if (layer != null) {
-            return layer;
+        RenderLayer cached = debugFilledBoxLayer;
+        if (cached != null) {
+            return cached;
         }
-        layer = readLayer(RENDER_LAYERS_DEBUG_FILLED_BOX_FIELD);
-        if (layer != null) {
-            return layer;
-        }
-        layer = invokeLayer(RENDER_LAYER_GET_DEBUG_FILLED_BOX);
-        if (layer != null) {
-            return layer;
-        }
-        throw new IllegalStateException("Unable to resolve debug filled box render layer");
-    }
-
-    private static Method findMethod(Class<?> target, String name) {
-        try {
-            return target.getMethod(name);
-        } catch (NoSuchMethodException ignored) {
-            return null;
+        synchronized (RenderLayerCompat.class) {
+            if (debugFilledBoxLayer == null) {
+                debugFilledBoxLayer = resolveLayer(name ->
+                        name.contains("debug_filled_box")
+                                || (name.contains("debug") && name.contains("filled") && name.contains("box"))
+                );
+            }
+            return debugFilledBoxLayer;
         }
     }
 
-    private static Field findField(Class<?> target, String name) {
-        try {
-            return target.getField(name);
-        } catch (NoSuchFieldException ignored) {
-            return null;
+    private static RenderLayer resolveLayer(Predicate<String> matcher) {
+        List<String> candidates = new ArrayList<>();
+        RenderLayer fromMethods = resolveFromMethods(RenderLayers.class, matcher, candidates);
+        if (fromMethods != null) {
+            return fromMethods;
         }
+        RenderLayer fromFields = resolveFromFields(RenderLayers.class, matcher, candidates);
+        if (fromFields != null) {
+            return fromFields;
+        }
+        fromMethods = resolveFromMethods(RenderLayer.class, matcher, candidates);
+        if (fromMethods != null) {
+            return fromMethods;
+        }
+        fromFields = resolveFromFields(RenderLayer.class, matcher, candidates);
+        if (fromFields != null) {
+            return fromFields;
+        }
+
+        throw new IllegalStateException("Unable to resolve render layer. Candidates: " + candidates);
     }
 
-    private static RenderLayer invokeLayer(Method method) {
-        if (method == null) {
-            return null;
+    private static RenderLayer resolveFromMethods(Class<?> owner, Predicate<String> matcher, List<String> candidates) {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (!Modifier.isStatic(method.getModifiers())) {
+                continue;
+            }
+            if (method.getParameterCount() != 0) {
+                continue;
+            }
+            if (!RenderLayer.class.isAssignableFrom(method.getReturnType())) {
+                continue;
+            }
+
+            method.setAccessible(true);
+            try {
+                RenderLayer layer = (RenderLayer) method.invoke(null);
+                if (layer == null) {
+                    continue;
+                }
+                String name = normalizedName(layer);
+                candidates.add(owner.getSimpleName() + "#" + method.getName() + "=" + name);
+                if (matcher.test(name)) {
+                    return layer;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
         }
-        try {
-            return (RenderLayer) method.invoke(null);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
+        return null;
     }
 
-    private static RenderLayer readLayer(Field field) {
-        if (field == null) {
-            return null;
+    private static RenderLayer resolveFromFields(Class<?> owner, Predicate<String> matcher, List<String> candidates) {
+        for (Field field : owner.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            if (!RenderLayer.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+
+            field.setAccessible(true);
+            try {
+                RenderLayer layer = (RenderLayer) field.get(null);
+                if (layer == null) {
+                    continue;
+                }
+                String name = normalizedName(layer);
+                candidates.add(owner.getSimpleName() + "." + field.getName() + "=" + name);
+                if (matcher.test(name)) {
+                    return layer;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
         }
-        try {
-            return (RenderLayer) field.get(null);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
+        return null;
+    }
+
+    private static String normalizedName(RenderLayer layer) {
+        return String.valueOf(layer).toLowerCase(Locale.ROOT);
     }
 }

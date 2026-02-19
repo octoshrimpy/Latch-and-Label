@@ -3,7 +3,8 @@ plugins {
     id 'maven-publish'
 }
 
-version = project.mod_version
+def mcVersionSuffix = (findProperty("mc_version_suffix") ?: "").toString().trim()
+version = mcVersionSuffix.isEmpty() ? project.mod_version : "${project.mod_version}+${mcVersionSuffix}"
 group = project.maven_group
 
 base {
@@ -84,5 +85,49 @@ publishing {
 
     repositories {
         // Add your publish target here.
+    }
+}
+
+def gradlewCommand = System.getProperty("os.name").toLowerCase().contains("win") ? "gradlew.bat" : "./gradlew"
+
+tasks.register("buildMc12110", Exec) {
+    group = "build"
+    description = "Builds a jar for Minecraft 1.21.10 with a mc-version suffix"
+    workingDir = rootDir
+    commandLine gradlewCommand,
+            "build",
+            "--console=plain",
+            "-Pbuild_matrix_child=true",
+            "-Pmc_version_suffix=mc1.21.10",
+            "-Pminecraft_version=1.21.10",
+            "-Pyarn_mappings=1.21.10+build.1",
+            "-Ploader_version=0.17.2",
+            "-Pfabric_version=0.138.4+1.21.10"
+}
+
+tasks.register("buildMc12111", Exec) {
+    group = "build"
+    description = "Builds a jar for Minecraft 1.21.11 with a mc-version suffix"
+    workingDir = rootDir
+    commandLine gradlewCommand,
+            "build",
+            "--console=plain",
+            "-Pbuild_matrix_child=true",
+            "-Pmc_version_suffix=mc1.21.11",
+            "-Pminecraft_version=1.21.11",
+            "-Pyarn_mappings=1.21.11+build.4",
+            "-Ploader_version=0.18.1",
+            "-Pfabric_version=0.141.3+1.21.11"
+}
+
+tasks.register("buildAllMc") {
+    group = "build"
+    description = "Builds jars for Minecraft 1.21.10 and 1.21.11"
+    dependsOn("buildMc12110", "buildMc12111")
+}
+
+if (project.hasProperty("build_matrix") && !project.hasProperty("build_matrix_child")) {
+    tasks.named("build").configure {
+        finalizedBy("buildAllMc")
     }
 }
