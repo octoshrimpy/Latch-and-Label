@@ -1,7 +1,7 @@
 {
   "required": false,
   "package": "com.latchandlabel.mixin",
-  "refmap": "client-latchlabel.refmap.json",
+  "refmap": "latchlabel.refmap.json",
   "compatibilityLevel": "JAVA_21",
   "client": [
     "client.HandledScreenSlotHighlightMixin"

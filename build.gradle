@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.11-SNAPSHOT'
+    id 'fabric-loom' version '1.13.3'
     id 'maven-publish'
 }
 
@@ -31,7 +31,8 @@ dependencies {
 loom {
     splitEnvironmentSourceSets()
     mixin {
-        defaultRefmapName = "latchlabel.refmap.json"
+        useLegacyMixinAp = true
+        add sourceSets.client, "latchlabel.refmap.json"
     }
 
     mods {

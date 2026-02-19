@@ -1,7 +1,6 @@
 package com.latchandlabel.client.render;
 
 import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Box;
 
@@ -60,6 +59,6 @@ public final class ThickOutlineRenderer {
             float b,
             float a
     ) {
-        VertexRendering.drawFilledBox(matrices, consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
+        RenderBox.drawFilledBox(matrices, consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
     }
 }
