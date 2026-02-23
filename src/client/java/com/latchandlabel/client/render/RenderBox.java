@@ -11,6 +11,7 @@ public final class RenderBox {
     private static final MethodHandle NEXT_VERTEX;
     private static final MethodHandle LINE_WIDTH;
     private static volatile boolean lineWidthFailed;
+    private static volatile boolean lineBoxRenderingDisabled;
 
     static {
         MethodHandle nextHandle = null;
@@ -40,30 +41,41 @@ public final class RenderBox {
             float b,
             float a
     ) {
+        if (lineBoxRenderingDisabled) {
+            return;
+        }
+
         float minX = (float) box.minX;
         float minY = (float) box.minY;
         float minZ = (float) box.minZ;
         float maxX = (float) box.maxX;
         float maxY = (float) box.maxY;
         float maxZ = (float) box.maxZ;
+        try {
+            // Bottom rectangle
+            line(entry, consumer, minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
+            line(entry, consumer, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
+            line(entry, consumer, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
+            line(entry, consumer, minX, minY, maxZ, minX, minY, minZ, r, g, b, a);
 
-        // Bottom rectangle
-        line(entry, consumer, minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
-        line(entry, consumer, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
-        line(entry, consumer, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
-        line(entry, consumer, minX, minY, maxZ, minX, minY, minZ, r, g, b, a);
+            // Top rectangle
+            line(entry, consumer, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
+            line(entry, consumer, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
+            line(entry, consumer, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
+            line(entry, consumer, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
 
-        // Top rectangle
-        line(entry, consumer, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
-        line(entry, consumer, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
-        line(entry, consumer, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
-        line(entry, consumer, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
-
-        // Vertical edges
-        line(entry, consumer, minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
-        line(entry, consumer, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
-        line(entry, consumer, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
-        line(entry, consumer, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
+            // Vertical edges
+            line(entry, consumer, minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
+            line(entry, consumer, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
+            line(entry, consumer, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+            line(entry, consumer, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
+        } catch (IllegalStateException error) {
+            if (isIncompatibleLineVertexFormat(error)) {
+                lineBoxRenderingDisabled = true;
+                return;
+            }
+            throw error;
+        }
     }
 
     public static void drawFilledBox(
@@ -230,5 +242,13 @@ public final class RenderBox {
         } catch (Throwable error) {
             lineWidthFailed = true;
         }
+    }
+
+    private static boolean isIncompatibleLineVertexFormat(IllegalStateException error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        return message.contains("Missing elements in vertex");
     }
 }

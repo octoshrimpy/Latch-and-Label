@@ -3,6 +3,8 @@ package com.latchandlabel.client.store;
 import com.latchandlabel.client.model.ChestKey;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,10 +17,21 @@ public final class TagStore {
     private Runnable changeListener = () -> {
     };
     private String activeScopeId = DEFAULT_SCOPE_ID;
+    private List<String> activeReadScopeIds = List.of(DEFAULT_SCOPE_ID);
 
     public synchronized Optional<String> getTag(ChestKey chestKey) {
         Objects.requireNonNull(chestKey, "chestKey");
-        return Optional.ofNullable(tagsForActiveScope().get(chestKey));
+        for (String scopeId : activeReadScopeIds) {
+            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
+            if (tags == null) {
+                continue;
+            }
+            String categoryId = tags.get(chestKey);
+            if (categoryId != null) {
+                return Optional.of(categoryId);
+            }
+        }
+        return Optional.empty();
     }
 
     public synchronized void setTag(ChestKey chestKey, String categoryId) {
@@ -43,7 +56,13 @@ public final class TagStore {
 
     public synchronized boolean clearTag(ChestKey chestKey) {
         Objects.requireNonNull(chestKey, "chestKey");
-        boolean removed = tagsForActiveScope().remove(chestKey) != null;
+        boolean removed = false;
+        for (String scopeId : activeReadScopeIds) {
+            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
+            if (tags != null && tags.remove(chestKey) != null) {
+                removed = true;
+            }
+        }
         if (removed) {
             notifyChanged();
         }
@@ -51,7 +70,16 @@ public final class TagStore {
     }
 
     public synchronized Map<ChestKey, String> snapshotTags() {
-        return Map.copyOf(tagsForActiveScope());
+        Map<ChestKey, String> merged = new HashMap<>();
+        for (int i = activeReadScopeIds.size() - 1; i >= 0; i--) {
+            String scopeId = activeReadScopeIds.get(i);
+            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
+            if (tags != null && !tags.isEmpty()) {
+                merged.putAll(tags);
+            }
+        }
+        tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
+        return Map.copyOf(merged);
     }
 
     public synchronized void replaceAll(Map<ChestKey, String> tags, String lastUsedCategoryId) {
@@ -67,7 +95,13 @@ public final class TagStore {
     }
 
     public synchronized Optional<String> getLastUsedCategoryId() {
-        return Optional.ofNullable(lastUsedCategoryIdByScope.get(activeScopeId));
+        for (String scopeId : activeReadScopeIds) {
+            String categoryId = lastUsedCategoryIdByScope.get(scopeId);
+            if (categoryId != null && !categoryId.isBlank()) {
+                return Optional.of(categoryId);
+            }
+        }
+        return Optional.empty();
     }
 
     public synchronized void setLastUsedCategoryId(String categoryId) {
@@ -111,11 +145,27 @@ public final class TagStore {
     }
 
     public synchronized void setActiveScopeId(String scopeId) {
+        setActiveScopeId(scopeId, List.of());
+    }
+
+    public synchronized void setActiveScopeId(String scopeId, List<String> fallbackReadScopeIds) {
         if (scopeId == null || scopeId.isBlank()) {
             scopeId = DEFAULT_SCOPE_ID;
         }
         activeScopeId = scopeId;
         tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
+
+        LinkedHashSet<String> readScopes = new LinkedHashSet<>();
+        readScopes.add(activeScopeId);
+        if (fallbackReadScopeIds != null) {
+            for (String fallbackScopeId : fallbackReadScopeIds) {
+                String normalized = normalizeScopeId(fallbackScopeId);
+                if (normalized != null) {
+                    readScopes.add(normalized);
+                }
+            }
+        }
+        activeReadScopeIds = List.copyOf(readScopes);
     }
 
     public synchronized String getActiveScopeId() {
@@ -162,6 +212,7 @@ public final class TagStore {
             this.activeScopeId = DEFAULT_SCOPE_ID;
         }
         this.tagsByScope.computeIfAbsent(this.activeScopeId, unused -> new HashMap<>());
+        this.activeReadScopeIds = List.of(this.activeScopeId);
         notifyChanged();
     }
 

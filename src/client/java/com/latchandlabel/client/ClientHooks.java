@@ -33,9 +33,13 @@ public final class ClientHooks {
         ShulkerItemCategoryBridge.register();
         FindOverlayListHud.register();
         FocusedTagBillboardRenderer.registerHud();
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-                LatchLabelClientState.tagStore().setActiveScopeId(TagScopeResolver.resolveCurrentScopeId(client))
-        );
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            TagScopeResolver.ResolvedScope resolvedScope = TagScopeResolver.resolveCurrentScope(client);
+            LatchLabelClientState.tagStore().setActiveScopeId(
+                    resolvedScope.primaryScopeId(),
+                    resolvedScope.fallbackReadScopeIds()
+            );
+        });
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);

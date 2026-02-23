@@ -10,6 +10,7 @@ import com.latchandlabel.client.find.FindCommand;
 import com.latchandlabel.client.find.FindSettings;
 import com.latchandlabel.client.tagging.TaggingController;
 import com.latchandlabel.client.targeting.ContainerTargeting;
+import com.latchandlabel.client.ui.ContainerTagButtonManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
@@ -26,6 +27,7 @@ public final class ClientInputHandler {
 
     private static KeyBinding openPickerKey;
     private static KeyBinding findShortcutKey;
+    private static KeyBinding moveToStorageKey;
     private static boolean inspectModeActive;
 
     private ClientInputHandler() {
@@ -44,6 +46,12 @@ public final class ClientInputHandler {
                 KeybindSettings.findShortcutKeyCode(),
                 CATEGORY
         ));
+        moveToStorageKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.latchlabel.move_to_storage",
+                InputUtil.Type.KEYSYM,
+                KeybindSettings.moveToStorageKeyCode(),
+                CATEGORY
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientInputHandler::onEndTick);
     }
@@ -55,6 +63,7 @@ public final class ClientInputHandler {
 
         openPickerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.openPickerKeyCode()));
         findShortcutKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.findShortcutKeyCode()));
+        moveToStorageKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.moveToStorageKeyCode()));
         KeyBinding.updateKeysByCode();
     }
 
@@ -81,6 +90,9 @@ public final class ClientInputHandler {
         }
         while (findShortcutKey.wasPressed()) {
             onFindShortcutPressed(client);
+        }
+        while (moveToStorageKey.wasPressed()) {
+            onMoveToStoragePressed(client);
         }
     }
 
@@ -117,6 +129,10 @@ public final class ClientInputHandler {
             return;
         }
         FindCommand.runFromShortcut(client);
+    }
+
+    private static void onMoveToStoragePressed(MinecraftClient client) {
+        ContainerTagButtonManager.triggerMoveToStorageForCurrentScreen(client);
     }
 
     private static boolean isModifierDown(Window window, int leftKey, int rightKey) {

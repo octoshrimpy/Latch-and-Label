@@ -5,7 +5,7 @@ tmp_dir = "tmp/air"
   # No compile artifact for Air itself; we just want a rerun trigger.
   cmd = "true"
   bin = "true"
-  full_bin = "./gradlew runClient --console=plain -Pminecraft_version=1.21.10 -Pyarn_mappings=1.21.10+build.1 -Ploader_version=0.17.2 -Pfabric_version=0.138.4+1.21.10"
+  full_bin = "./scripts/run-client.sh"
   include_ext = ["java", "json", "toml", "properties", "gradle", "kts"]
   include_dir = ["src", "gradle"]
   exclude_dir = ["build", "run", ".gradle", ".git", "tmp"]
