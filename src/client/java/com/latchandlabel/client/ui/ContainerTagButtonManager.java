@@ -137,6 +137,31 @@ public final class ContainerTagButtonManager {
         return resolveCategory(client, registration.target());
     }
 
+    public static boolean triggerMoveToStorageForCurrentScreen(MinecraftClient client) {
+        return triggerMoveToStorageForCurrentScreen(client, null);
+    }
+
+    public static boolean triggerMoveToStorageForCurrentScreen(MinecraftClient client, ChestKey expectedTarget) {
+        if (client == null || client.currentScreen == null) {
+            return false;
+        }
+
+        Screen screen = client.currentScreen;
+        ButtonRegistration registration = BUTTONS.get(screen);
+        if (registration == null) {
+            return false;
+        }
+        if (expectedTarget != null) {
+            Optional<ChestKey> actualTarget = registration.target();
+            if (actualTarget.isEmpty() || !expectedTarget.equals(actualTarget.get())) {
+                return false;
+            }
+        }
+
+        moveMatchingFromPlayerToStorage(client, screen, registration);
+        return true;
+    }
+
     private static Text buttonLabel(Optional<ChestKey> target, Optional<Category> category) {
         if (target.isEmpty()) {
             return Text.literal("?");

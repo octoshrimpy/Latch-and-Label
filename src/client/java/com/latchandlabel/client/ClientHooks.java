@@ -1,6 +1,7 @@
 package com.latchandlabel.client;
 
 import com.latchandlabel.client.input.ClientInputHandler;
+import com.latchandlabel.client.input.AltClickMoveToStorageHandler;
 import com.latchandlabel.client.tagging.ContainerInteractionTracker;
 import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagReconciler;
@@ -27,6 +28,7 @@ public final class ClientHooks {
 
     public static void register() {
         ClientInputHandler.register();
+        AltClickMoveToStorageHandler.register();
         ContainerInteractionTracker.register();
         ShulkerItemCategoryBridge.register();
         FindOverlayListHud.register();
