@@ -1,6 +1,7 @@
 package com.latchandlabel.client;
 
 import com.latchandlabel.client.input.ClientInputHandler;
+import com.latchandlabel.client.input.AltClickMoveToStorageHandler;
 import com.latchandlabel.client.tagging.ContainerInteractionTracker;
 import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagReconciler;
@@ -27,13 +28,19 @@ public final class ClientHooks {
 
     public static void register() {
         ClientInputHandler.register();
+        AltClickMoveToStorageHandler.register();
         ContainerInteractionTracker.register();
         ShulkerItemCategoryBridge.register();
         FindOverlayListHud.register();
         FocusedTagBillboardRenderer.registerHud();
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-                LatchLabelClientState.dataManager().setActiveScopeId(TagScopeResolver.resolveCurrentScopeId(client))
-        );
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            TagScopeResolver.ResolvedScope resolvedScope = TagScopeResolver.resolveCurrentScope(client);
+            LatchLabelClientState.dataManager().setActiveScopeId(resolvedScope.primaryScopeId());
+            LatchLabelClientState.tagStore().setActiveScopeId(
+                    resolvedScope.primaryScopeId(),
+                    resolvedScope.fallbackReadScopeIds()
+            );
+        });
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);

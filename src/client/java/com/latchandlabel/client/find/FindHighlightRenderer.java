@@ -2,16 +2,16 @@ package com.latchandlabel.client.find;
 
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
+import com.latchandlabel.client.render.RenderBox;
+import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.StorageRenderShapeResolver;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Frustum;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
@@ -72,13 +72,13 @@ public final class FindHighlightRenderer {
             return;
         }
 
-        Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
+        Vec3d cameraPos = client.gameRenderer.getCamera().getCameraPos();
         double nearDistanceSq = LOD_NEAR_DISTANCE * LOD_NEAR_DISTANCE;
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
         long frameParity = world.getTime() & 1L;
         Frustum frustum = context.worldRenderer().getCapturedFrustum();
-        VertexConsumer lineConsumer = consumers.getBuffer(RenderLayer.getLines());
-        VertexConsumer fillConsumer = consumers.getBuffer(RenderLayer.getDebugFilledBox());
+        VertexConsumer lineConsumer = consumers.getBuffer(RenderLayerCompat.lines());
+        VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
 
         matrices.push();
         matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
@@ -149,7 +149,7 @@ public final class FindHighlightRenderer {
                     : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
             ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, MATCH_ALPHA);
             if (distanceSq > nearDistanceSq) {
-                VertexRendering.drawBox(matrices.peek(), lineConsumer, box.expand(OUTLINE_BASE_EXPAND), r, g, b, MATCH_ALPHA);
+                RenderBox.drawBox(matrices.peek(), lineConsumer, box.expand(OUTLINE_BASE_EXPAND), r, g, b, MATCH_ALPHA);
             }
 
             if (candidate.focused()) {

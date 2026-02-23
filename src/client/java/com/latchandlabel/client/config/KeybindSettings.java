@@ -5,6 +5,7 @@ import org.lwjgl.glfw.GLFW;
 public final class KeybindSettings {
     private static int openPickerKeyCode = GLFW.GLFW_KEY_B;
     private static int findShortcutKeyCode = GLFW.GLFW_KEY_UNKNOWN;
+    private static int moveToStorageKeyCode = GLFW.GLFW_KEY_UNKNOWN;
 
     private KeybindSettings() {
     }
@@ -23,5 +24,13 @@ public final class KeybindSettings {
 
     public static void setFindShortcutKeyCode(int keyCode) {
         findShortcutKeyCode = keyCode;
+    }
+
+    public static int moveToStorageKeyCode() {
+        return moveToStorageKeyCode;
+    }
+
+    public static void setMoveToStorageKeyCode(int keyCode) {
+        moveToStorageKeyCode = keyCode;
     }
 }

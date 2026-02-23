@@ -209,23 +209,25 @@ public final class CategoryItemMappingScreen extends Screen {
             }
         }
 
+        List<Text> hoveredTooltipLines = null;
         if (!deleteConfirmOpen && hoveredItemId != null) {
             ItemStack hoveredStack = new ItemStack(Registries.ITEM.get(hoveredItemId));
-            List<Text> tooltipLines = new ArrayList<>();
-            tooltipLines.add(hoveredStack.getName());
+            hoveredTooltipLines = new ArrayList<>();
+            hoveredTooltipLines.add(hoveredStack.getName());
 
             boolean mappedToCurrent = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(hoveredItemId, categoryId);
             if (!mappedToCurrent && isShiftDown()) {
                 Optional<Category> mappedCategory = LatchLabelClientState.itemCategoryMappingService()
                         .categoryIdFor(hoveredItemId)
                         .flatMap(LatchLabelClientState.categoryStore()::getById);
-                mappedCategory.ifPresent(category -> tooltipLines.add(
-                        Text.translatable("latchlabel.tooltip.category", category.name())
-                                .setStyle(Style.EMPTY.withColor(category.color()))
-                ));
+                if (mappedCategory.isPresent()) {
+                    Category category = mappedCategory.get();
+                    hoveredTooltipLines.add(
+                            Text.translatable("latchlabel.tooltip.category", category.name())
+                                    .setStyle(Style.EMPTY.withColor(category.color()))
+                    );
+                }
             }
-
-            context.drawTooltip(textRenderer, tooltipLines, Optional.empty(), mouseX, mouseY);
         }
 
         if (!deleteConfirmOpen && colorPickerOpen) {
@@ -234,6 +236,10 @@ public final class CategoryItemMappingScreen extends Screen {
 
         if (deleteConfirmOpen) {
             drawDeleteConfirmDialog(context, mouseX, mouseY);
+        }
+
+        if (hoveredTooltipLines != null) {
+            context.drawTooltip(textRenderer, hoveredTooltipLines, Optional.empty(), mouseX, mouseY);
         }
     }
 
@@ -458,7 +464,7 @@ public final class CategoryItemMappingScreen extends Screen {
         int rows = (int) Math.ceil((double) COLOR_PALETTE.length / COLOR_SWATCH_COLUMNS);
         int pickerWidth = (COLOR_SWATCH_COLUMNS * COLOR_SWATCH_SIZE) + ((COLOR_SWATCH_COLUMNS - 1) * COLOR_SWATCH_GAP) + 8;
         int pickerHeight = (rows * COLOR_SWATCH_SIZE) + ((rows - 1) * COLOR_SWATCH_GAP) + 8;
-        context.fill(left, top, left + pickerWidth, top + pickerHeight, 0xF0101010);
+        context.fill(left, top, left + pickerWidth, top + pickerHeight, 0xFF101010);
         context.drawStrokedRectangle(left, top, pickerWidth, pickerHeight, 0xFF4A4A4A);
 
         for (int i = 0; i < COLOR_PALETTE.length; i++) {
@@ -604,7 +610,7 @@ public final class CategoryItemMappingScreen extends Screen {
         int boxTop = (height - DELETE_CONFIRM_HEIGHT) / 2;
         int boxRight = boxLeft + DELETE_CONFIRM_WIDTH;
         int boxBottom = boxTop + DELETE_CONFIRM_HEIGHT;
-        context.fill(boxLeft, boxTop, boxRight, boxBottom, 0xF0101010);
+        context.fill(boxLeft, boxTop, boxRight, boxBottom, 0xFF101010);
         context.drawStrokedRectangle(boxLeft, boxTop, DELETE_CONFIRM_WIDTH, DELETE_CONFIRM_HEIGHT, 0xFF5A5A5A);
 
         Text confirmText = Text.translatable("screen.latchlabel.category_items.delete_confirm", activeCategory().name());

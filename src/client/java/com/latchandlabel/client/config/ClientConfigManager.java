@@ -73,6 +73,7 @@ public final class ClientConfigManager {
         TransferSettings.setMoveSourceMode(MoveSourceMode.fromConfigValue(asString(root.get("moveSourceMode"), "inventory")));
         KeybindSettings.setOpenPickerKeyCode(asInt(root.get("openPickerKeyCode"), 66));
         KeybindSettings.setFindShortcutKeyCode(asInt(root.get("findShortcutKeyCode"), -1));
+        KeybindSettings.setMoveToStorageKeyCode(asInt(root.get("moveToStorageKeyCode"), -1));
         ClientInputHandler.reloadFromSettings();
 
         LatchLabel.LOGGER.info("Reloaded client config from {}", configPath);
@@ -104,6 +105,7 @@ public final class ClientConfigManager {
         TransferSettings.setMoveSourceMode(MoveSourceMode.INVENTORY);
         KeybindSettings.setOpenPickerKeyCode(66);
         KeybindSettings.setFindShortcutKeyCode(-1);
+        KeybindSettings.setMoveToStorageKeyCode(-1);
         ClientInputHandler.reloadFromSettings();
         writeCurrentSettings();
 
@@ -124,6 +126,7 @@ public final class ClientConfigManager {
         root.addProperty("moveSourceMode", TransferSettings.moveSourceMode().toConfigValue());
         root.addProperty("openPickerKeyCode", KeybindSettings.openPickerKeyCode());
         root.addProperty("findShortcutKeyCode", KeybindSettings.findShortcutKeyCode());
+        root.addProperty("moveToStorageKeyCode", KeybindSettings.moveToStorageKeyCode());
 
         try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);

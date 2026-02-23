@@ -4,6 +4,7 @@
   "key.categories.latchlabel": "Latch & Label",
   "key.latchlabel.open_picker": "Open Category Picker",
   "key.latchlabel.find_shortcut": "Run Find Shortcut",
+  "key.latchlabel.move_to_storage": "Move Matching Items to Storage",
   "screen.latchlabel.category_picker.title": "Category Picker",
   "screen.latchlabel.category_picker.new_category_name": "New Category",
   "screen.latchlabel.category_picker.remove_current": "Remove Current Category",
