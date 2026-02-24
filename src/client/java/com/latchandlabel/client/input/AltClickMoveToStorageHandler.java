@@ -1,5 +1,7 @@
 package com.latchandlabel.client.input;
 
+import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -12,6 +14,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.Window;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -54,7 +58,11 @@ public final class AltClickMoveToStorageHandler {
             if (resolved.isEmpty()) {
                 return ActionResult.PASS;
             }
-            if (StorageTagResolver.resolveCategoryId(client, resolved.get()).isEmpty()) {
+            Optional<String> categoryId = StorageTagResolver.resolveCategoryId(client, resolved.get());
+            if (categoryId.isEmpty()) {
+                return ActionResult.PASS;
+            }
+            if (!hasMatchingPlayerInventoryStacks(client.player.getInventory(), categoryId.get())) {
                 return ActionResult.PASS;
             }
 
@@ -99,6 +107,29 @@ public final class AltClickMoveToStorageHandler {
                 InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_LEFT_ALT)
                         || InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_RIGHT_ALT)
         );
+    }
+
+    private static boolean hasMatchingPlayerInventoryStacks(PlayerInventory inventory, String categoryId) {
+        boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
+
+        for (int slotIndex = 0; slotIndex < 36; slotIndex++) {
+            if (!includeHotbar && slotIndex < 9) {
+                continue;
+            }
+
+            ItemStack stack = inventory.getStack(slotIndex);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            boolean matches = LatchLabelClientState.itemCategoryMappingService()
+                    .categoryIdFor(stack)
+                    .map(categoryId::equals)
+                    .orElse(false);
+            if (matches) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private record PendingAutoMove(ChestKey target, int remainingTicks) {
