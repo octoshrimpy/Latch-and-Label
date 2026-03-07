@@ -3,6 +3,7 @@ package com.latchandlabel.client.config;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.book.BookCommand;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.text.Text;
@@ -14,36 +15,37 @@ public final class ConfigCommand {
     }
 
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
-        dispatcher.register(
-                ClientCommandManager.literal("latchlabel")
+        var latchlabelLiteral = ClientCommandManager.literal("latchlabel")
+                .then(ClientCommandManager.literal("reload")
+                        .executes(context -> {
+                            return reloadAll(context.getSource());
+                        })
+                )
+                .then(ClientCommandManager.literal("config")
                         .then(ClientCommandManager.literal("reload")
-                                .executes(context -> {
-                                    return reloadAll(context.getSource());
-                                })
+                                .executes(context -> reloadAll(context.getSource()))
                         )
-                        .then(ClientCommandManager.literal("config")
-                                .then(ClientCommandManager.literal("reload")
-                                        .executes(context -> reloadAll(context.getSource()))
-                                )
-                                .then(ClientCommandManager.literal("export")
-                                        .executes(context -> exportProfile(context.getSource(), ""))
-                                        .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
-                                                .executes(context -> exportProfile(
-                                                        context.getSource(),
-                                                        StringArgumentType.getString(context, "path")
-                                                ))
-                                        )
-                                )
-                                .then(ClientCommandManager.literal("import")
-                                        .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
-                                                .executes(context -> importProfile(
-                                                        context.getSource(),
-                                                        StringArgumentType.getString(context, "path")
-                                                ))
-                                        )
+                        .then(ClientCommandManager.literal("export")
+                                .executes(context -> exportProfile(context.getSource(), ""))
+                                .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                                        .executes(context -> exportProfile(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "path")
+                                        ))
                                 )
                         )
-        );
+                        .then(ClientCommandManager.literal("import")
+                                .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                                        .executes(context -> importProfile(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "path")
+                                        ))
+                                )
+                        )
+                );
+
+        BookCommand.registerSubcommands(latchlabelLiteral);
+        dispatcher.register(latchlabelLiteral);
     }
 
     private static int reloadAll(FabricClientCommandSource source) {

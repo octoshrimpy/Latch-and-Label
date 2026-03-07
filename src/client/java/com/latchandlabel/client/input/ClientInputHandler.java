@@ -1,6 +1,8 @@
 package com.latchandlabel.client.input;
 
 import com.latchandlabel.client.LatchLabel;
+import com.latchandlabel.client.book.BookConfirmScreen;
+import com.latchandlabel.client.book.BookExportImportService;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.config.InspectSettings;
@@ -17,6 +19,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.Window;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -99,6 +103,9 @@ public final class ClientInputHandler {
     private static void onOpenPickerPressed(MinecraftClient client, boolean isShiftDown, boolean isCtrlDown) {
         Optional<ChestKey> target = ContainerTargeting.getTargetedContainer(client);
         if (target.isEmpty()) {
+            if (client.player != null && tryBookInteraction(client)) {
+                return;
+            }
             return;
         }
 
@@ -133,6 +140,19 @@ public final class ClientInputHandler {
 
     private static void onMoveToStoragePressed(MinecraftClient client) {
         ContainerTagButtonManager.triggerMoveToStorageForCurrentScreen(client);
+    }
+
+    private static boolean tryBookInteraction(MinecraftClient client) {
+        ItemStack heldStack = client.player.getMainHandStack();
+        if (heldStack.isOf(Items.WRITABLE_BOOK)) {
+            client.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT));
+            return true;
+        }
+        if (heldStack.isOf(Items.WRITTEN_BOOK) && BookExportImportService.isLatchLabelBook(heldStack)) {
+            client.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
+            return true;
+        }
+        return false;
     }
 
     private static boolean isModifierDown(Window window, int leftKey, int rightKey) {

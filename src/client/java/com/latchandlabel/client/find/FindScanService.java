@@ -127,6 +127,51 @@ public final class FindScanService {
         return matchType;
     }
 
+    public List<FindMatch> scanByTag(MinecraftClient client, String categoryId, int radius) {
+        if (client == null || client.world == null || client.player == null) {
+            return List.of();
+        }
+
+        World world = client.world;
+        PlayerEntity player = client.player;
+        Identifier dimensionId = world.getRegistryKey().getValue();
+        double maxDistanceSq = (double) radius * radius;
+        Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
+        cacheOpenScreenContents(client, currentScreenChestKey);
+        pruneObservedCache();
+
+        List<FindMatch> matches = new ArrayList<>();
+        Set<ChestKey> candidates = candidateContainers(client, radius, currentScreenChestKey);
+
+        for (ChestKey chestKey : candidates) {
+            if (!isCandidateInScope(chestKey, dimensionId, player, maxDistanceSq, world)) {
+                continue;
+            }
+            boolean isTagged = LatchLabelClientState.tagStore()
+                    .getTag(chestKey)
+                    .filter(categoryId::equals)
+                    .isPresent();
+            if (!isTagged) {
+                continue;
+            }
+            BlockPos pos = chestKey.pos();
+            double distance = Math.sqrt(player.squaredDistanceTo(
+                    pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
+            matches.add(new FindMatch(chestKey, MatchType.POSSIBLE, distance));
+        }
+
+        matches.sort(Comparator.comparingDouble(FindMatch::distance));
+        return List.copyOf(matches);
+    }
+
+    public static boolean isRecentlyObserved(ChestKey key) {
+        ObservedContainerContents entry = OBSERVED_CONTAINERS.get(key);
+        if (entry == null) {
+            return false;
+        }
+        return (System.currentTimeMillis() - entry.observedAtEpochMs()) <= OBSERVED_CACHE_TTL_MS;
+    }
+
     public static void onClientTick(MinecraftClient client) {
         if (client == null) {
             return;

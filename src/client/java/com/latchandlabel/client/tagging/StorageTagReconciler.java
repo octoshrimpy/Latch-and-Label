@@ -35,7 +35,6 @@ public final class StorageTagReconciler {
         World world = client.world;
         Map<ChestKey, String> tags = LatchLabelClientState.tagStore().snapshotTags();
 
-        List<ChestKey> toClear = new ArrayList<>();
         List<Map.Entry<ChestKey, ChestKey>> toMigrate = new ArrayList<>();
 
         for (Map.Entry<ChestKey, String> entry : tags.entrySet()) {
@@ -58,17 +57,11 @@ public final class StorageTagReconciler {
             Optional<ChestKey> splitFallback = resolveSplitFallback(world, key);
             if (splitFallback.isPresent()) {
                 toMigrate.add(Map.entry(key, splitFallback.get()));
-                continue;
             }
-
-            toClear.add(key);
         }
 
         for (Map.Entry<ChestKey, ChestKey> migration : toMigrate) {
             migrateTag(migration.getKey(), migration.getValue());
-        }
-        for (ChestKey key : toClear) {
-            LatchLabelClientState.tagStore().clearTag(key);
         }
     }
 

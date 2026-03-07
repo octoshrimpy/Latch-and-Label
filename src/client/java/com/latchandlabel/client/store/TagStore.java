@@ -5,6 +5,7 @@ import com.latchandlabel.client.model.ChestKey;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -149,10 +150,11 @@ public final class TagStore {
     }
 
     public synchronized void setActiveScopeId(String scopeId, List<String> fallbackReadScopeIds) {
-        if (scopeId == null || scopeId.isBlank()) {
-            scopeId = DEFAULT_SCOPE_ID;
+        String normalizedScopeId = normalizeScopeId(scopeId);
+        if (normalizedScopeId == null) {
+            normalizedScopeId = DEFAULT_SCOPE_ID;
         }
-        activeScopeId = scopeId;
+        activeScopeId = normalizedScopeId;
         tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
 
         LinkedHashSet<String> readScopes = new LinkedHashSet<>();
@@ -236,7 +238,20 @@ public final class TagStore {
         if (scopeId == null || scopeId.isBlank()) {
             return null;
         }
-        return scopeId;
+        String trimmed = scopeId.trim().toLowerCase(Locale.ROOT);
+        StringBuilder normalized = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char current = trimmed.charAt(i);
+            if ((current >= 'a' && current <= 'z') || (current >= '0' && current <= '9') || current == '.' || current == '-' || current == '_') {
+                normalized.append(current);
+            } else {
+                normalized.append('_');
+            }
+        }
+        if (normalized.length() == 0) {
+            return null;
+        }
+        return normalized.toString();
     }
 
     private void notifyChanged() {

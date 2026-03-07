@@ -9,13 +9,19 @@ import net.minecraft.server.integrated.IntegratedServer;
 import net.minecraft.util.WorldSavePath;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
 public final class TagScopeResolver {
-    private static final String MULTIPLAYER_PREFIX = "mp:";
-    private static final String SINGLEPLAYER_PREFIX = "sp:";
-    private static final String WORLD_SCOPE_SUFFIX_PREFIX = "|w1:";
+    private static final int DEFAULT_MINECRAFT_PORT = 25565;
+    private static final String MULTIPLAYER_PREFIX = "mp_";
+    private static final String LEGACY_MULTIPLAYER_PREFIX = "mp:";
+    private static final String SINGLEPLAYER_PREFIX = "sp_";
+    private static final String LEGACY_SINGLEPLAYER_PREFIX = "sp:";
+    private static final String WORLD_SCOPE_SUFFIX_PREFIX = "_w1_";
+    private static final String LEGACY_WORLD_SCOPE_SUFFIX_PREFIX = "|w1:";
 
     private TagScopeResolver() {
     }
@@ -29,38 +35,24 @@ public final class TagScopeResolver {
             return new ResolvedScope(TagStore.DEFAULT_SCOPE_ID, List.of());
         }
 
-        String baseScopeId = null;
-        ServerInfo serverEntry = client.getCurrentServerEntry();
-        if (serverEntry != null && serverEntry.address != null && !serverEntry.address.isBlank()) {
-            baseScopeId = MULTIPLAYER_PREFIX + normalize(serverEntry.address);
-        } else if (client.isInSingleplayer()) {
-            IntegratedServer integratedServer = client.getServer();
-            if (integratedServer != null) {
-                Path rootPath = integratedServer.getSavePath(WorldSavePath.ROOT);
-                if (rootPath != null && rootPath.getFileName() != null) {
-                    baseScopeId = SINGLEPLAYER_PREFIX + normalize(rootPath.getFileName().toString());
-                } else {
-                    baseScopeId = SINGLEPLAYER_PREFIX + "unknown";
-                }
-            } else {
-                baseScopeId = SINGLEPLAYER_PREFIX + "unknown";
-            }
-        } else {
-            ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
-            if (networkHandler != null && networkHandler.getConnection() != null && networkHandler.getConnection().getAddress() != null) {
-                baseScopeId = MULTIPLAYER_PREFIX + normalize(networkHandler.getConnection().getAddress().toString());
-            }
-        }
-
-        if (baseScopeId == null) {
-            baseScopeId = TagStore.DEFAULT_SCOPE_ID;
-        }
+        BaseScope baseScope = resolveBaseScope(client);
 
         String worldDiscriminator = resolveWorldDiscriminator(client);
         if (worldDiscriminator == null) {
-            return new ResolvedScope(baseScopeId, List.of());
+            return new ResolvedScope(baseScope.primaryScopeId(), baseScope.fallbackScopeIds());
         }
-        return new ResolvedScope(baseScopeId + WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator, List.of(baseScopeId));
+
+        LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
+        // Backward-compatibility: older releases used world-discriminated scope ids.
+        fallbacks.add(baseScope.primaryScopeId() + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+        for (String fallbackBaseScopeId : baseScope.fallbackScopeIds()) {
+            fallbacks.add(fallbackBaseScopeId + WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+            fallbacks.add(fallbackBaseScopeId + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+        }
+        fallbacks.addAll(baseScope.fallbackScopeIds());
+        String primaryScopeId = baseScope.primaryScopeId();
+        fallbacks.remove(primaryScopeId);
+        return new ResolvedScope(primaryScopeId, List.copyOf(fallbacks));
     }
 
     public record ResolvedScope(String primaryScopeId, List<String> fallbackReadScopeIds) {
@@ -70,6 +62,81 @@ public final class TagScopeResolver {
             }
             fallbackReadScopeIds = fallbackReadScopeIds == null ? List.of() : List.copyOf(fallbackReadScopeIds);
         }
+    }
+
+    private static BaseScope resolveBaseScope(MinecraftClient client) {
+        if (client == null) {
+            return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of());
+        }
+        if (client.isInSingleplayer()) {
+            return resolveSingleplayerBaseScope(client);
+        }
+
+        BaseScope multiplayer = resolveMultiplayerBaseScope(client);
+        if (multiplayer != null) {
+            return multiplayer;
+        }
+        return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of());
+    }
+
+    private static BaseScope resolveSingleplayerBaseScope(MinecraftClient client) {
+        String worldId = "unknown";
+        IntegratedServer integratedServer = client.getServer();
+        if (integratedServer != null) {
+            Path rootPath = integratedServer.getSavePath(WorldSavePath.ROOT);
+            if (rootPath != null && rootPath.getFileName() != null) {
+                worldId = normalize(rootPath.getFileName().toString());
+            }
+        }
+
+        String primary = SINGLEPLAYER_PREFIX + worldId;
+        LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
+        fallbacks.add(LEGACY_SINGLEPLAYER_PREFIX + worldId);
+        fallbacks.add(TagStore.DEFAULT_SCOPE_ID);
+        return new BaseScope(primary, List.copyOf(fallbacks));
+    }
+
+    private static BaseScope resolveMultiplayerBaseScope(MinecraftClient client) {
+        List<String> rawCandidates = new ArrayList<>();
+
+        ServerInfo serverEntry = client.getCurrentServerEntry();
+        if (serverEntry != null && serverEntry.address != null && !serverEntry.address.isBlank()) {
+            rawCandidates.add(serverEntry.address);
+        }
+
+        ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
+        if (networkHandler != null && networkHandler.getConnection() != null && networkHandler.getConnection().getAddress() != null) {
+            rawCandidates.add(networkHandler.getConnection().getAddress().toString());
+        }
+
+        if (rawCandidates.isEmpty()) {
+            return null;
+        }
+
+        AddressParts canonicalAddress = null;
+        for (String candidate : rawCandidates) {
+            canonicalAddress = parseAddress(candidate);
+            if (canonicalAddress != null) {
+                break;
+            }
+        }
+        if (canonicalAddress == null) {
+            canonicalAddress = new AddressParts("unknown", DEFAULT_MINECRAFT_PORT);
+        }
+
+        String primary = MULTIPLAYER_PREFIX + normalize(canonicalAddress.host()) + "_" + canonicalAddress.port();
+        LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
+        for (String candidate : rawCandidates) {
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            String normalized = normalize(candidate);
+            fallbacks.add(LEGACY_MULTIPLAYER_PREFIX + normalized);
+            fallbacks.add(MULTIPLAYER_PREFIX + normalized);
+        }
+        fallbacks.add(TagStore.DEFAULT_SCOPE_ID);
+        fallbacks.remove(primary);
+        return new BaseScope(primary, List.copyOf(fallbacks));
     }
 
     private static String normalize(String value) {
@@ -93,6 +160,62 @@ public final class TagScopeResolver {
             return "unknown";
         }
         return result;
+    }
+
+    private static AddressParts parseAddress(String rawAddress) {
+        if (rawAddress == null || rawAddress.isBlank()) {
+            return null;
+        }
+
+        String candidate = rawAddress.trim();
+        int slashIndex = candidate.indexOf('/');
+        if (slashIndex >= 0) {
+            String left = candidate.substring(0, slashIndex).trim();
+            String right = candidate.substring(slashIndex + 1).trim();
+            candidate = left.isEmpty() ? right : left;
+        }
+        if (candidate.isEmpty()) {
+            return null;
+        }
+
+        String host = candidate;
+        int port = DEFAULT_MINECRAFT_PORT;
+
+        if (candidate.startsWith("[")) {
+            int endBracket = candidate.indexOf(']');
+            if (endBracket > 1) {
+                host = candidate.substring(1, endBracket);
+                if (candidate.length() > endBracket + 2 && candidate.charAt(endBracket + 1) == ':') {
+                    port = parsePort(candidate.substring(endBracket + 2), DEFAULT_MINECRAFT_PORT);
+                }
+            }
+        } else {
+            int lastColon = candidate.lastIndexOf(':');
+            if (lastColon > 0 && candidate.indexOf(':') == lastColon) {
+                host = candidate.substring(0, lastColon);
+                port = parsePort(candidate.substring(lastColon + 1), DEFAULT_MINECRAFT_PORT);
+            }
+        }
+
+        if (host == null || host.isBlank()) {
+            host = "unknown";
+        }
+        return new AddressParts(host, port);
+    }
+
+    private static int parsePort(String rawPort, int fallback) {
+        if (rawPort == null || rawPort.isBlank()) {
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(rawPort.trim());
+            if (parsed <= 0 || parsed > 65535) {
+                return fallback;
+            }
+            return parsed;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private static String resolveWorldDiscriminator(MinecraftClient client) {
@@ -119,5 +242,11 @@ public final class TagScopeResolver {
         }
 
         return normalize(raw.toString());
+    }
+
+    private record BaseScope(String primaryScopeId, List<String> fallbackScopeIds) {
+    }
+
+    private record AddressParts(String host, int port) {
     }
 }

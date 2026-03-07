@@ -6,6 +6,7 @@ public final class FindSettings {
     private static boolean enableFindOverlayList;
     private static boolean allowSlashFCommand = true;
     private static boolean allowFindKeybind = true;
+    private static boolean autoRefreshContents = false;
 
     private FindSettings() {
     }
@@ -48,5 +49,13 @@ public final class FindSettings {
 
     public static void setAllowFindKeybind(boolean enabled) {
         allowFindKeybind = enabled;
+    }
+
+    public static boolean autoRefreshContents() {
+        return autoRefreshContents;
+    }
+
+    public static void setAutoRefreshContents(boolean enabled) {
+        autoRefreshContents = enabled;
     }
 }

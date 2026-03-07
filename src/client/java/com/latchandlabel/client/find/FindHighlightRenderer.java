@@ -38,6 +38,7 @@ public final class FindHighlightRenderer {
     private static final double PULSE_MIN_SCALE = 1.0;
     private static final double PULSE_MAX_SCALE = 1.35;
     private static final float MATCH_ALPHA = 0.90f;
+    private static final float POSSIBLE_ALPHA = 0.55f;
     private static final float FOCUS_ALPHA = 0.95f;
     private static final float EXACT_R = 0.20f;
     private static final float EXACT_G = 0.95f;
@@ -131,7 +132,8 @@ public final class FindHighlightRenderer {
                 b = categoryColor[2];
             }
 
-            candidates.add(new RenderCandidate(key, box, distanceSq, focused, shouldPulse, r, g, b));
+            boolean isPossible = match.matchType() == FindScanService.MatchType.POSSIBLE;
+            candidates.add(new RenderCandidate(key, box, distanceSq, focused, shouldPulse, isPossible, r, g, b));
         }
 
         candidates.sort(Comparator.comparingDouble(RenderCandidate::distanceSq));
@@ -147,16 +149,24 @@ public final class FindHighlightRenderer {
             float b = candidate.b();
             double distanceSq = candidate.distanceSq();
 
-            double baseThickness = distanceSq <= nearDistanceSq
-                    ? THICK_NEAR
-                    : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
-            double thickness = candidate.shouldPulse() ? baseThickness * pulseScale : baseThickness;
-            ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, MATCH_ALPHA);
+            float alpha;
+            double thickness;
+            if (candidate.isPossible()) {
+                thickness = THICK_FAR;
+                alpha = POSSIBLE_ALPHA;
+            } else {
+                double baseThickness = distanceSq <= nearDistanceSq
+                        ? THICK_NEAR
+                        : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
+                thickness = candidate.shouldPulse() ? baseThickness * pulseScale : baseThickness;
+                alpha = MATCH_ALPHA;
+            }
+            ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, alpha);
             if (distanceSq > nearDistanceSq) {
                 RenderBox.drawBox(matrices.peek(), lineConsumer, box.expand(OUTLINE_BASE_EXPAND), r, g, b, MATCH_ALPHA);
             }
 
-            if (candidate.focused()) {
+            if (candidate.focused() && !candidate.isPossible()) {
                 double focusThickness = candidate.shouldPulse() ? FOCUS_THICK * pulseScale : FOCUS_THICK;
                 ThickOutlineRenderer.drawThickOutline(
                         matrices,
@@ -181,6 +191,7 @@ public final class FindHighlightRenderer {
             double distanceSq,
             boolean focused,
             boolean shouldPulse,
+            boolean isPossible,
             float r,
             float g,
             float b

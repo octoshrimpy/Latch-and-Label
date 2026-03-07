@@ -70,6 +70,7 @@ public final class ClientConfigManager {
         FindSettings.setEnableFindOverlayList(asBoolean(root.get("enableFindOverlayList"), false));
         FindSettings.setAllowSlashFCommand(asBoolean(root.get("allowSlashFCommand"), true));
         FindSettings.setAllowFindKeybind(asBoolean(root.get("allowFindKeybind"), true));
+        FindSettings.setAutoRefreshContents(asBoolean(root.get("autoRefreshContents"), false));
         TransferSettings.setMoveSourceMode(MoveSourceMode.fromConfigValue(asString(root.get("moveSourceMode"), "inventory")));
         KeybindSettings.setOpenPickerKeyCode(asInt(root.get("openPickerKeyCode"), 66));
         KeybindSettings.setFindShortcutKeyCode(asInt(root.get("findShortcutKeyCode"), -1));
@@ -102,6 +103,7 @@ public final class ClientConfigManager {
         FindSettings.setEnableFindOverlayList(false);
         FindSettings.setAllowSlashFCommand(true);
         FindSettings.setAllowFindKeybind(true);
+        FindSettings.setAutoRefreshContents(false);
         TransferSettings.setMoveSourceMode(MoveSourceMode.INVENTORY);
         KeybindSettings.setOpenPickerKeyCode(66);
         KeybindSettings.setFindShortcutKeyCode(-1);
@@ -123,6 +125,7 @@ public final class ClientConfigManager {
         root.addProperty("variantMatchingEnabled", FindSettings.variantMatchingEnabled());
         root.addProperty("allowSlashFCommand", FindSettings.allowSlashFCommand());
         root.addProperty("allowFindKeybind", FindSettings.allowFindKeybind());
+        root.addProperty("autoRefreshContents", FindSettings.autoRefreshContents());
         root.addProperty("moveSourceMode", TransferSettings.moveSourceMode().toConfigValue());
         root.addProperty("openPickerKeyCode", KeybindSettings.openPickerKeyCode());
         root.addProperty("findShortcutKeyCode", KeybindSettings.findShortcutKeyCode());

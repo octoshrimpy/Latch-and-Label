@@ -1,12 +1,14 @@
 package com.latchandlabel.client.config.ui;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.book.BookExportImportService;
 import com.latchandlabel.client.config.InspectActivationMode;
 import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
 import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -38,6 +40,7 @@ public final class LatchLabelConfigScreen extends Screen {
     private ButtonWidget slashFButton;
     private ButtonWidget findKeybindButton;
     private ButtonWidget moveSourceButton;
+    private ButtonWidget autoRefreshButton;
 
     public LatchLabelConfigScreen(Screen parent) {
         super(Text.translatable("screen.latchlabel.config.title"));
@@ -47,7 +50,7 @@ public final class LatchLabelConfigScreen extends Screen {
     @Override
     protected void init() {
         panelWidth = Math.min(520, width - 30);
-        panelHeight = 296;
+        panelHeight = 384;
         panelLeft = (width - panelWidth) / 2;
         panelTop = (height - panelHeight) / 2;
         labelX = panelLeft + 16;
@@ -56,12 +59,13 @@ public final class LatchLabelConfigScreen extends Screen {
         rowY = panelTop + 30;
         rowHeight = 22;
 
-        addReloadButton();
+        addReloadButtons();
         addInspectRangeControls();
         addInspectModeControl();
         addFindRadiusControls();
         addHighlightDurationControls();
         addToggleControls();
+        addBookButtons();
 
         addDrawableChild(ButtonWidget.builder(Text.translatable("gui.done"), button -> close())
                 .dimensions(panelLeft + panelWidth - 96, panelTop + panelHeight - 24, 80, 20)
@@ -89,7 +93,9 @@ public final class LatchLabelConfigScreen extends Screen {
 
     private void drawLabels(DrawContext context) {
         int y = panelTop + 36;
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.reload_label"), labelX, y, 0xFFE8E8E8);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.reload_categories_label"), labelX, y, 0xFFE8E8E8);
+        y += rowHeight;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.reload_tags_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.inspect_range_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
@@ -108,14 +114,24 @@ public final class LatchLabelConfigScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.find_keybind_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8);
+        y += rowHeight;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.auto_refresh_label"), labelX, y, 0xFFE8E8E8);
+        y += rowHeight;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.book_export_label"), labelX, y, 0xFFE8E8E8);
+        y += rowHeight;
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.book_import_label"), labelX, y, 0xFFE8E8E8);
     }
 
-    private void addReloadButton() {
-        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.config.reload"), button -> {
-                    LatchLabelClientState.clientConfigManager().reload();
-                    if (client != null) {
-                        client.setScreen(new LatchLabelConfigScreen(parent));
-                    }
+    private void addReloadButtons() {
+        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.config.reload_categories"), button -> {
+                    LatchLabelClientState.dataManager().reloadCategoriesFromDisk();
+                })
+                .dimensions(controlX, rowY, controlWidth, 20)
+                .build());
+        rowY += rowHeight;
+
+        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.config.reload_tags"), button -> {
+                    LatchLabelClientState.dataManager().reloadTagsFromDisk();
                 })
                 .dimensions(controlX, rowY, controlWidth, 20)
                 .build());
@@ -225,6 +241,39 @@ public final class LatchLabelConfigScreen extends Screen {
                 })
                 .dimensions(controlX, rowY, controlWidth, 20)
                 .build());
+        rowY += rowHeight;
+
+        autoRefreshButton = addDrawableChild(ButtonWidget.builder(toggleText(FindSettings.autoRefreshContents()), button -> {
+                    FindSettings.setAutoRefreshContents(!FindSettings.autoRefreshContents());
+                    saveConfig();
+                    refreshButtonLabels();
+                })
+                .dimensions(controlX, rowY, controlWidth, 20)
+                .build());
+    }
+
+    private void addBookButtons() {
+        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.config.book_export"), button -> {
+                    MinecraftClient mc = MinecraftClient.getInstance();
+                    BookExportImportService.ExportResult result = BookExportImportService.exportToHeldBook(mc);
+                    if (mc.player != null) {
+                        mc.player.sendMessage(result.message(), false);
+                    }
+                })
+                .dimensions(controlX, rowY, controlWidth, 20)
+                .build());
+        rowY += rowHeight;
+
+        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.config.book_import"), button -> {
+                    MinecraftClient mc = MinecraftClient.getInstance();
+                    BookExportImportService.ImportResult result = BookExportImportService.importFromHeldBook(mc);
+                    if (mc.player != null) {
+                        mc.player.sendMessage(result.message(), false);
+                    }
+                })
+                .dimensions(controlX, rowY, controlWidth, 20)
+                .build());
+        rowY += rowHeight;
     }
 
     private void addStepControl(int y, int initialValue, StepValueUpdater updater) {
@@ -272,6 +321,9 @@ public final class LatchLabelConfigScreen extends Screen {
         }
         if (moveSourceButton != null) {
             moveSourceButton.setMessage(moveSourceText());
+        }
+        if (autoRefreshButton != null) {
+            autoRefreshButton.setMessage(toggleText(FindSettings.autoRefreshContents()));
         }
     }
 

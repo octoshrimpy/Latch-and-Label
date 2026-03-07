@@ -10,6 +10,7 @@ import com.latchandlabel.client.find.FindCommand;
 import com.latchandlabel.client.find.FindHighlightRenderer;
 import com.latchandlabel.client.find.FindOverlayListHud;
 import com.latchandlabel.client.find.FindScanService;
+import com.latchandlabel.client.find.NearbyChestScanner;
 import com.latchandlabel.client.inspect.FocusedTagBillboardRenderer;
 import com.latchandlabel.client.inspect.InspectModeRenderer;
 import com.latchandlabel.client.config.ConfigCommand;
@@ -35,13 +36,17 @@ public final class ClientHooks {
         FocusedTagBillboardRenderer.registerHud();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             TagScopeResolver.ResolvedScope resolvedScope = TagScopeResolver.resolveCurrentScope(client);
-            LatchLabelClientState.dataManager().setActiveScopeId(resolvedScope.primaryScopeId());
+            LatchLabelClientState.dataManager().setActiveScopeId(
+                    resolvedScope.primaryScopeId(),
+                    resolvedScope.fallbackReadScopeIds()
+            );
             LatchLabelClientState.tagStore().setActiveScopeId(
                     resolvedScope.primaryScopeId(),
                     resolvedScope.fallbackReadScopeIds()
             );
         });
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(NearbyChestScanner::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);
 

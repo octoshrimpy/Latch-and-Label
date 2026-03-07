@@ -81,6 +81,7 @@ public final class ClientDataManager implements AutoCloseable {
     private final Object saveLock = new Object();
 
     private String activeScopeId = TagStore.DEFAULT_SCOPE_ID;
+    private List<String> activeFallbackReadScopeIds = List.of();
     private ScheduledFuture<?> pendingSave;
     private boolean initialized;
     private boolean closed;
@@ -133,13 +134,24 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     public void setActiveScopeId(String scopeId) {
+        setActiveScopeId(scopeId, List.of());
+    }
+
+    public void setActiveScopeId(String scopeId, List<String> fallbackReadScopeIds) {
         String normalizedScopeId = normalizeScopeId(scopeId);
+        List<String> normalizedFallbackScopeIds = normalizeFallbackScopeIds(normalizedScopeId, fallbackReadScopeIds);
 
         synchronized (saveLock) {
             if (closed || !initialized) {
                 return;
             }
+            if (Objects.equals(activeScopeId, normalizedScopeId)
+                    && Objects.equals(activeFallbackReadScopeIds, normalizedFallbackScopeIds)) {
+                return;
+            }
             if (Objects.equals(activeScopeId, normalizedScopeId)) {
+                activeFallbackReadScopeIds = normalizedFallbackScopeIds;
+                tagStore.setActiveScopeId(activeScopeId, activeFallbackReadScopeIds);
                 return;
             }
             if (pendingSave != null) {
@@ -150,6 +162,7 @@ public final class ClientDataManager implements AutoCloseable {
 
         flushNow();
         activeScopeId = normalizedScopeId;
+        activeFallbackReadScopeIds = normalizedFallbackScopeIds;
         runWithSaveSchedulingSuppressed(this::loadActiveScopeData);
     }
 
@@ -192,6 +205,32 @@ public final class ClientDataManager implements AutoCloseable {
             }
         }
         runWithSaveSchedulingSuppressed(this::loadActiveScopeData);
+    }
+
+    public void reloadCategoriesFromDisk() {
+        synchronized (saveLock) {
+            if (closed || !initialized) {
+                return;
+            }
+            if (pendingSave != null) {
+                pendingSave.cancel(false);
+                pendingSave = null;
+            }
+        }
+        runWithSaveSchedulingSuppressed(this::loadCategoriesAndOverrides);
+    }
+
+    public void reloadTagsFromDisk() {
+        synchronized (saveLock) {
+            if (closed || !initialized) {
+                return;
+            }
+            if (pendingSave != null) {
+                pendingSave.cancel(false);
+                pendingSave = null;
+            }
+        }
+        runWithSaveSchedulingSuppressed(this::loadTags);
     }
 
     @Override
@@ -242,7 +281,7 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     private void loadActiveScopeData() {
-        tagStore.setActiveScopeId(activeScopeId);
+        tagStore.setActiveScopeId(activeScopeId, activeFallbackReadScopeIds);
         loadCategoriesAndOverrides();
         loadTags();
     }
@@ -313,16 +352,67 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     private void loadTags() {
-        Path filePath = tagsFilePathForScope(activeScopeId);
-        if (!Files.exists(filePath)) {
-            if (Files.exists(legacyTagsFilePath)) {
-                loadLegacyTags(activeScopeId);
-                writeTags();
-                return;
+        LinkedHashSet<String> readScopes = new LinkedHashSet<>();
+        readScopes.add(activeScopeId);
+        readScopes.addAll(activeFallbackReadScopeIds);
+
+        Map<String, Map<ChestKey, String>> tagsByScope = new LinkedHashMap<>();
+        Map<String, String> lastUsedByScope = new HashMap<>();
+        boolean loadedAnyScope = false;
+
+        for (String scopeId : readScopes) {
+            ScopedTags scopedTags = loadScopedTags(scopeId);
+            if (scopedTags == null) {
+                continue;
             }
-            tagStore.replaceAll(Map.of(), null);
+            loadedAnyScope = true;
+            tagsByScope.put(scopeId, new HashMap<>(scopedTags.tags()));
+            if (scopedTags.lastUsedCategoryId() != null && !scopedTags.lastUsedCategoryId().isBlank()) {
+                lastUsedByScope.put(scopeId, scopedTags.lastUsedCategoryId());
+            }
+        }
+
+        if (!loadedAnyScope && Files.exists(legacyTagsFilePath)) {
+            ScopedTags legacyTags = loadLegacyTags(activeScopeId);
+            tagsByScope.put(activeScopeId, new HashMap<>(legacyTags.tags()));
+            if (legacyTags.lastUsedCategoryId() != null && !legacyTags.lastUsedCategoryId().isBlank()) {
+                lastUsedByScope.put(activeScopeId, legacyTags.lastUsedCategoryId());
+            }
+            tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId);
             writeTags();
             return;
+        }
+
+        boolean activeHasData = hasScopeData(tagsByScope.get(activeScopeId), lastUsedByScope.get(activeScopeId));
+        boolean migratedFromFallback = false;
+        if (!activeHasData) {
+            for (String fallbackScopeId : activeFallbackReadScopeIds) {
+                Map<ChestKey, String> fallbackTags = tagsByScope.get(fallbackScopeId);
+                String fallbackLastUsed = lastUsedByScope.get(fallbackScopeId);
+                if (!hasScopeData(fallbackTags, fallbackLastUsed)) {
+                    continue;
+                }
+                tagsByScope.put(activeScopeId, fallbackTags == null ? new HashMap<>() : new HashMap<>(fallbackTags));
+                if (fallbackLastUsed != null && !fallbackLastUsed.isBlank()) {
+                    lastUsedByScope.put(activeScopeId, fallbackLastUsed);
+                }
+                migratedFromFallback = true;
+                LatchLabel.LOGGER.info("Migrating tags from fallback scope {} to primary scope {}", fallbackScopeId, activeScopeId);
+                break;
+            }
+        }
+
+        tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
+        tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId);
+        if (migratedFromFallback || !loadedAnyScope) {
+            writeTags();
+        }
+    }
+
+    private ScopedTags loadScopedTags(String scopeId) {
+        Path filePath = tagsFilePathForScope(scopeId);
+        if (!Files.exists(filePath)) {
+            return null;
         }
 
         JsonObject root;
@@ -330,9 +420,7 @@ public final class ClientDataManager implements AutoCloseable {
             root = readJsonObject(filePath);
         } catch (IllegalStateException e) {
             LatchLabel.LOGGER.warn("Invalid scoped tags file {}, using empty state", filePath, e);
-            tagStore.replaceAll(Map.of(), null);
-            writeTags();
-            return;
+            return ScopedTags.empty();
         }
         int version = parseVersion(root, filePath);
 
@@ -346,18 +434,16 @@ public final class ClientDataManager implements AutoCloseable {
                     filePath
             );
         }
-
-        tagStore.replaceAll(parsedTags, lastUsedCategoryId);
+        return new ScopedTags(parsedTags, lastUsedCategoryId);
     }
 
-    private void loadLegacyTags(String scopeId) {
+    private ScopedTags loadLegacyTags(String scopeId) {
         JsonObject root;
         try {
             root = readJsonObject(legacyTagsFilePath);
         } catch (IllegalStateException e) {
             LatchLabel.LOGGER.warn("Invalid legacy tags file {}, using empty state", legacyTagsFilePath, e);
-            tagStore.replaceAll(Map.of(), null);
-            return;
+            return ScopedTags.empty();
         }
 
         JsonElement scopesElement = root.get("scopes");
@@ -374,19 +460,17 @@ public final class ClientDataManager implements AutoCloseable {
                 }
             }
             if (selectedScope == null) {
-                tagStore.replaceAll(Map.of(), null);
-                return;
+                return ScopedTags.empty();
             }
 
             Map<ChestKey, String> parsedTags = parseTagsObject(selectedScope.get("tags"), legacyTagsFilePath);
             String lastUsedCategoryId = remapLegacyCategoryId(asString(selectedScope.get("lastUsedCategoryId")));
-            tagStore.replaceAll(parsedTags, lastUsedCategoryId);
-            return;
+            return new ScopedTags(parsedTags, lastUsedCategoryId);
         }
 
         Map<ChestKey, String> parsedTags = parseTagsObject(root.get("tags"), legacyTagsFilePath);
         String lastUsedCategoryId = remapLegacyCategoryId(asString(root.get("lastUsedCategoryId")));
-        tagStore.replaceAll(parsedTags, lastUsedCategoryId);
+        return new ScopedTags(parsedTags, lastUsedCategoryId);
     }
 
     private void writeCategoriesAndOverrides() {
@@ -633,6 +717,10 @@ public final class ClientDataManager implements AutoCloseable {
         return LEGACY_CATEGORY_ID_REMAP.getOrDefault(categoryId, categoryId);
     }
 
+    private static boolean hasScopeData(Map<ChestKey, String> tags, String lastUsedCategoryId) {
+        return (tags != null && !tags.isEmpty()) || (lastUsedCategoryId != null && !lastUsedCategoryId.isBlank());
+    }
+
     private Path scopeDirectory(String scopeId) {
         return scopesDir.resolve(normalizeScopeId(scopeId));
     }
@@ -673,9 +761,31 @@ public final class ClientDataManager implements AutoCloseable {
         return normalized.toString();
     }
 
+    private static List<String> normalizeFallbackScopeIds(String activeScopeId, List<String> fallbackReadScopeIds) {
+        if (fallbackReadScopeIds == null || fallbackReadScopeIds.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String fallbackScopeId : fallbackReadScopeIds) {
+            String normalizedScopeId = normalizeScopeId(fallbackScopeId);
+            if (Objects.equals(activeScopeId, normalizedScopeId)) {
+                continue;
+            }
+            normalized.add(normalizedScopeId);
+        }
+        return List.copyOf(normalized);
+    }
+
     private record ParsedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
         private static ParsedOverrides empty() {
             return new ParsedOverrides(Map.of(), Set.of());
+        }
+    }
+
+    private record ScopedTags(Map<ChestKey, String> tags, String lastUsedCategoryId) {
+        private static ScopedTags empty() {
+            return new ScopedTags(Map.of(), null);
         }
     }
 }
