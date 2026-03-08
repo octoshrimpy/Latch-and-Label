@@ -6,6 +6,7 @@ import net.minecraft.util.Identifier;
 import java.util.List;
 import java.util.Objects;
 
+/** Provides the built-in set of starter categories created for new installations. */
 public final class DefaultCategories {
     private DefaultCategories() {
     }

@@ -11,6 +11,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Resolves the category ID assigned to a storage container, accounting for
+ * double-chest normalization so both halves share the same tag.
+ */
 public final class StorageTagResolver {
     private StorageTagResolver() {
     }

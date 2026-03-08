@@ -19,6 +19,7 @@ import com.latchandlabel.client.data.TagScopeResolver;
 import com.latchandlabel.client.tooltip.ItemCategoryTooltipHandler;
 import com.latchandlabel.client.LatchLabel;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
@@ -49,6 +50,7 @@ public final class ClientHooks {
         ClientTickEvents.END_CLIENT_TICK.register(NearbyChestScanner::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(DumpService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
+        ClientChunkEvents.CHUNK_LOAD.register(StorageTagReconciler::onChunkLoad);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {

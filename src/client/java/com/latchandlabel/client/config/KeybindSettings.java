@@ -2,6 +2,7 @@ package com.latchandlabel.client.config;
 
 import org.lwjgl.glfw.GLFW;
 
+/** Holds the configurable GLFW key codes for the mod's keybindings. */
 public final class KeybindSettings {
     private static int openPickerKeyCode = GLFW.GLFW_KEY_B;
     private static int findShortcutKeyCode = GLFW.GLFW_KEY_UNKNOWN;

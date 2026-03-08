@@ -1,5 +1,6 @@
 package com.latchandlabel.client.config;
 
+/** Runtime settings for item transfer behavior (move-to-storage source slots). */
 public final class TransferSettings {
     private static MoveSourceMode moveSourceMode = MoveSourceMode.INVENTORY;
 

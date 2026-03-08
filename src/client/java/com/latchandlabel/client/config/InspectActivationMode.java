@@ -2,6 +2,7 @@ package com.latchandlabel.client.config;
 
 import java.util.Locale;
 
+/** Which modifier key(s) activate inspect mode (container outline rendering). */
 public enum InspectActivationMode {
     ALT_ONLY,
     SHIFT_ONLY,

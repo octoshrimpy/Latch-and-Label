@@ -28,7 +28,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -38,6 +37,11 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Manages persistence of categories, tags, and item-category overrides to disk.
+ * Data is scoped per-world/server and saved with a debounce to avoid excessive I/O.
+ * Handles legacy migration from older flat-file formats to the current scoped layout.
+ */
 public final class ClientDataManager implements AutoCloseable {
     private static final int CURRENT_VERSION = 1;
     private static final long SAVE_DEBOUNCE_MS = 1_000L;
@@ -742,23 +746,7 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     private static String normalizeScopeId(String scopeId) {
-        if (scopeId == null || scopeId.isBlank()) {
-            return TagStore.DEFAULT_SCOPE_ID;
-        }
-        String trimmed = scopeId.trim().toLowerCase(Locale.ROOT);
-        StringBuilder normalized = new StringBuilder(trimmed.length());
-        for (int i = 0; i < trimmed.length(); i++) {
-            char current = trimmed.charAt(i);
-            if ((current >= 'a' && current <= 'z') || (current >= '0' && current <= '9') || current == '.' || current == '-' || current == '_') {
-                normalized.append(current);
-            } else {
-                normalized.append('_');
-            }
-        }
-        if (normalized.length() == 0) {
-            return TagStore.DEFAULT_SCOPE_ID;
-        }
-        return normalized.toString();
+        return ScopeUtil.normalizeScopeId(scopeId, TagStore.DEFAULT_SCOPE_ID);
     }
 
     private static List<String> normalizeFallbackScopeIds(String activeScopeId, List<String> fallbackReadScopeIds) {

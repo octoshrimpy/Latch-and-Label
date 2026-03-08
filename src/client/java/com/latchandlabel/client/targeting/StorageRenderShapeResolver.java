@@ -11,6 +11,7 @@ import net.minecraft.world.World;
 
 import java.util.Optional;
 
+/** Computes the world-space bounding box for a storage container, merging double-chest halves. */
 public final class StorageRenderShapeResolver {
     private StorageRenderShapeResolver() {
     }

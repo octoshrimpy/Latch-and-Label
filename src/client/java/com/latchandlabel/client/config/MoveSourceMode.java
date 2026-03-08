@@ -1,5 +1,6 @@
 package com.latchandlabel.client.config;
 
+/** Controls whether alt-click item transfers pull from inventory only or inventory + hotbar. */
 public enum MoveSourceMode {
     INVENTORY("inventory"),
     INVENTORY_AND_HOTBAR("inventory_hotbar");

@@ -10,6 +10,7 @@ import net.minecraft.world.World;
 
 import java.util.Optional;
 
+/** Resolves the storage container the player's crosshair is currently pointing at. */
 public final class ContainerTargeting {
     private ContainerTargeting() {
     }

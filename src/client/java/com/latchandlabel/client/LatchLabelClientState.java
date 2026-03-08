@@ -7,6 +7,10 @@ import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
 import com.latchandlabel.client.store.CategoryStore;
 import com.latchandlabel.client.store.TagStore;
 
+/**
+ * Central service locator holding singleton instances of all major subsystems.
+ * Call {@link #initialize()} once during mod startup before accessing any services.
+ */
 public final class LatchLabelClientState {
     private static final CategoryStore CATEGORY_STORE = new CategoryStore();
     private static final TagStore TAG_STORE = new TagStore();

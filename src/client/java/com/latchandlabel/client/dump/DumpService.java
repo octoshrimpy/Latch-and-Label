@@ -23,13 +23,15 @@ import java.util.Set;
 
 public final class DumpService {
 
-    private static final Deque<ChestKey> dumpQueue = new ArrayDeque<>();
+    private record DumpTarget(ChestKey key, String categoryId) {}
+
+    private static final Deque<DumpTarget> dumpQueue = new ArrayDeque<>();
     private static boolean active = false;
     private static boolean autoCloseNext = false;
     private static boolean awaitingScreen = false;
     private static int cooldownTicks = 0;
     private static int containersVisited = 0;
-    private static ChestKey currentTarget = null;
+    private static DumpTarget currentTarget = null;
 
     private DumpService() {
     }
@@ -69,7 +71,7 @@ public final class DumpService {
                 .filter(entry -> inventoryCategories.contains(entry.getValue()))
                 .filter(entry -> DumpSettings.queueMode() || isWithinRange(player, entry.getKey()))
                 .sorted(Comparator.comparingDouble(entry -> distanceSq(player, entry.getKey())))
-                .forEach(entry -> dumpQueue.add(entry.getKey()));
+                .forEach(entry -> dumpQueue.add(new DumpTarget(entry.getKey(), entry.getValue())));
 
         if (dumpQueue.isEmpty()) {
             if (client.inGameHud != null) {
@@ -116,9 +118,12 @@ public final class DumpService {
         }
 
         // If a screen just opened after we interacted
-        if (awaitingScreen && client.currentScreen != null) {
-            ContainerTagButtonManager.triggerMoveToStorageForCurrentScreen(client);
-            containersVisited++;
+        if (awaitingScreen && client.currentScreen instanceof HandledScreen<?> handledScreen) {
+            int moved = ContainerTagButtonManager.moveMatchingFromPlayerToStorage(
+                    client, handledScreen.getScreenHandler(), currentTarget.categoryId());
+            if (moved > 0) {
+                containersVisited++;
+            }
             autoCloseNext = true;
             awaitingScreen = false;
             return;
@@ -145,15 +150,15 @@ public final class DumpService {
         if (DumpSettings.queueMode()) {
             // In queue mode: look for the first container in reach; skip out-of-reach ones back to end
             int queueSize = dumpQueue.size();
-            ChestKey next = null;
+            DumpTarget next = null;
             int checked = 0;
             while (!dumpQueue.isEmpty() && checked < queueSize) {
-                ChestKey candidate = dumpQueue.poll();
+                DumpTarget candidate = dumpQueue.poll();
                 checked++;
-                if (!candidate.dimensionId().equals(client.world.getRegistryKey().getValue())) {
+                if (!candidate.key().dimensionId().equals(client.world.getRegistryKey().getValue())) {
                     continue; // discard dimension mismatches
                 }
-                if (isWithinRange(player, candidate)) {
+                if (isWithinRange(player, candidate.key())) {
                     next = candidate;
                     break;
                 }
@@ -166,13 +171,13 @@ public final class DumpService {
             openContainer(client, next);
         } else {
             // Reach-only mode: poll and discard anything not in reach
-            ChestKey next = null;
+            DumpTarget next = null;
             while (!dumpQueue.isEmpty()) {
-                ChestKey candidate = dumpQueue.poll();
-                if (!candidate.dimensionId().equals(client.world.getRegistryKey().getValue())) {
+                DumpTarget candidate = dumpQueue.poll();
+                if (!candidate.key().dimensionId().equals(client.world.getRegistryKey().getValue())) {
                     continue;
                 }
-                if (isWithinRange(player, candidate)) {
+                if (isWithinRange(player, candidate.key())) {
                     next = candidate;
                     break;
                 }
@@ -191,9 +196,9 @@ public final class DumpService {
         }
     }
 
-    private static void openContainer(MinecraftClient client, ChestKey key) {
-        currentTarget = key;
-        BlockPos pos = key.pos();
+    private static void openContainer(MinecraftClient client, DumpTarget target) {
+        currentTarget = target;
+        BlockPos pos = target.key().pos();
         BlockHitResult hitResult = new BlockHitResult(
                 Vec3d.ofCenter(pos),
                 Direction.UP,

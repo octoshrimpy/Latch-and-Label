@@ -6,6 +6,11 @@ import net.minecraft.util.math.BlockPos;
 import java.util.Locale;
 import java.util.Objects;
 
+/**
+ * Uniquely identifies a storage container by its dimension and block position.
+ * Serializes to/from a pipe-delimited string (e.g. {@code minecraft:overworld|10,64,-30})
+ * for JSON persistence, with legacy support for saves that omitted the namespace.
+ */
 public record ChestKey(Identifier dimensionId, BlockPos pos) {
     private static final String DELIMITER = "|";
     private static final String COORD_DELIMITER = ",";
@@ -16,12 +21,14 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
         Objects.requireNonNull(pos, "pos");
     }
 
+    /** Serializes this key to a stable string suitable for use as a JSON map key. */
     public String toStringKey() {
         return serializeDimensionId(dimensionId)
                 + DELIMITER
                 + pos.getX() + COORD_DELIMITER + pos.getY() + COORD_DELIMITER + pos.getZ();
     }
 
+    /** Parses a key previously produced by {@link #toStringKey()}. */
     public static ChestKey fromStringKey(String raw) {
         Objects.requireNonNull(raw, "raw");
 

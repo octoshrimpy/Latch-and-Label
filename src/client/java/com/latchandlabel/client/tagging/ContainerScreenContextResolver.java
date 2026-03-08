@@ -12,6 +12,10 @@ import net.minecraft.screen.ScreenHandler;
 
 import java.util.Optional;
 
+/**
+ * Determines which {@link ChestKey} corresponds to the currently open container screen,
+ * using crosshair targeting first, then falling back to the interaction tracker.
+ */
 public final class ContainerScreenContextResolver {
     private static final boolean DEBUG = Boolean.getBoolean("latchlabel.debug.container_resolve");
 

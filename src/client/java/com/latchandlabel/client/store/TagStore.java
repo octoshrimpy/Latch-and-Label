@@ -1,15 +1,21 @@
 package com.latchandlabel.client.store;
 
+import com.latchandlabel.client.data.ScopeUtil;
 import com.latchandlabel.client.model.ChestKey;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * In-memory store for container-to-category tag mappings, organized by scope.
+ * Scopes allow per-world/server isolation of tags. Reads fall through a
+ * prioritized list of scopes (active first, then fallbacks). All public
+ * methods are synchronized for thread safety.
+ */
 public final class TagStore {
     public static final String DEFAULT_SCOPE_ID = "global";
 
@@ -70,6 +76,7 @@ public final class TagStore {
         return removed;
     }
 
+    /** Returns a merged snapshot of all tags across active read scopes (primary wins over fallbacks). */
     public synchronized Map<ChestKey, String> snapshotTags() {
         Map<ChestKey, String> merged = new HashMap<>();
         for (int i = activeReadScopeIds.size() - 1; i >= 0; i--) {
@@ -124,6 +131,7 @@ public final class TagStore {
         this.changeListener = Objects.requireNonNull(changeListener, "changeListener");
     }
 
+    /** Removes all tag entries and last-used references for the given category across all scopes. */
     public synchronized void clearCategoryReferences(String categoryId) {
         Objects.requireNonNull(categoryId, "categoryId");
 
@@ -149,6 +157,7 @@ public final class TagStore {
         setActiveScopeId(scopeId, List.of());
     }
 
+    /** Sets the active write scope and ordered fallback read scopes. */
     public synchronized void setActiveScopeId(String scopeId, List<String> fallbackReadScopeIds) {
         String normalizedScopeId = normalizeScopeId(scopeId);
         if (normalizedScopeId == null) {
@@ -235,23 +244,7 @@ public final class TagStore {
     }
 
     private static String normalizeScopeId(String scopeId) {
-        if (scopeId == null || scopeId.isBlank()) {
-            return null;
-        }
-        String trimmed = scopeId.trim().toLowerCase(Locale.ROOT);
-        StringBuilder normalized = new StringBuilder(trimmed.length());
-        for (int i = 0; i < trimmed.length(); i++) {
-            char current = trimmed.charAt(i);
-            if ((current >= 'a' && current <= 'z') || (current >= '0' && current <= '9') || current == '.' || current == '-' || current == '_') {
-                normalized.append(current);
-            } else {
-                normalized.append('_');
-            }
-        }
-        if (normalized.length() == 0) {
-            return null;
-        }
-        return normalized.toString();
+        return ScopeUtil.normalizeScopeId(scopeId, null);
     }
 
     private void notifyChanged() {

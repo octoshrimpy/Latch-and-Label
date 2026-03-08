@@ -7,6 +7,7 @@ import net.minecraft.block.entity.EnderChestBlockEntity;
 import net.minecraft.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.inventory.Inventory;
 
+/** Identifies which block entity types the mod considers taggable storage containers. */
 public final class TrackableStorage {
     private TrackableStorage() {
     }

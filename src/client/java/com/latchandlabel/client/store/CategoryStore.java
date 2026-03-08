@@ -10,6 +10,12 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * In-memory store for user-defined {@link Category} definitions.
+ * Categories are kept sorted by their {@code order} field. All public
+ * methods are synchronized for thread safety. Register a change listener
+ * to be notified when the store is mutated (used for persistence triggers).
+ */
 public final class CategoryStore {
     private final List<Category> categories = new ArrayList<>();
     private Runnable changeListener = () -> {
@@ -27,6 +33,7 @@ public final class CategoryStore {
         return List.copyOf(categories);
     }
 
+    /** Replaces all categories with the given list, re-sorted by order. */
     public synchronized void replaceAll(List<Category> nextCategories) {
         Objects.requireNonNull(nextCategories, "nextCategories");
 
@@ -37,6 +44,7 @@ public final class CategoryStore {
         notifyChanged();
     }
 
+    /** Updates the display details of an existing category. Returns false if nothing changed. */
     public synchronized boolean updateCategoryDetails(String categoryId, String name, int color, Identifier iconItemId) {
         Objects.requireNonNull(categoryId, "categoryId");
         Objects.requireNonNull(name, "name");
@@ -75,6 +83,7 @@ public final class CategoryStore {
         return false;
     }
 
+    /** Creates a new category with a unique ID derived from the name and appends it to the store. */
     public synchronized Category createCategory(String preferredName, int color, Identifier iconItemId) {
         Objects.requireNonNull(preferredName, "preferredName");
         Objects.requireNonNull(iconItemId, "iconItemId");

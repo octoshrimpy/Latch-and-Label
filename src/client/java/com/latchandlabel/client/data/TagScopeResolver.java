@@ -14,6 +14,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Derives the current data scope from the active server address or singleplayer world name.
+ * Produces a primary scope ID for writes and a prioritized list of fallback scopes for
+ * reads, enabling backward-compatible migration from older scope naming conventions.
+ */
 public final class TagScopeResolver {
     private static final int DEFAULT_MINECRAFT_PORT = 25565;
     private static final String MULTIPLAYER_PREFIX = "mp_";

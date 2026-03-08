@@ -10,6 +10,7 @@ import net.minecraft.text.Text;
 
 import java.nio.file.Path;
 
+/** Registers the {@code /latchlabel} client command tree (reload, config export/import, book). */
 public final class ConfigCommand {
     private ConfigCommand() {
     }

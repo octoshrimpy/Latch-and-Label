@@ -26,7 +26,9 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Maintains a client-side bridge between placed shulker tags and shulker item stacks.
+ * Maintains a client-side bridge between placed shulker box tags and shulker item stacks.
+ * When a tagged shulker is broken, the bridge fingerprints its contents and remembers
+ * the category so that when the item is picked up, the tag can be preserved.
  */
 public final class ShulkerItemCategoryBridge {
     private static final long PENDING_BREAK_TTL_MS = 3_000L;

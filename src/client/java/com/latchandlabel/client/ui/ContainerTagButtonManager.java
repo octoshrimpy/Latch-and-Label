@@ -272,6 +272,35 @@ public final class ContainerTagButtonManager {
         showMoveOverlay(client, "latchlabel.move_result.down", movedStacks);
     }
 
+    public static int moveMatchingFromPlayerToStorage(MinecraftClient client, ScreenHandler handler, String categoryId) {
+        if (client == null || client.player == null || client.interactionManager == null) {
+            return 0;
+        }
+
+        boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
+        int movedStacks = 0;
+
+        for (Slot slot : handler.slots) {
+            if (!(slot.inventory instanceof PlayerInventory)) {
+                continue;
+            }
+            if (!includeHotbar && slot.getIndex() < 9) {
+                continue;
+            }
+
+            ItemStack stack = slot.getStack();
+            if (stack.isEmpty() || !isInCategory(stack, categoryId)) {
+                continue;
+            }
+
+            if (quickMove(client, handler, slot.id)) {
+                movedStacks++;
+            }
+        }
+
+        return movedStacks;
+    }
+
     private static void moveMatchingFromPlayerToStorage(MinecraftClient client, Screen screen, ButtonRegistration registration) {
         if (client == null || client.player == null || client.interactionManager == null) {
             return;

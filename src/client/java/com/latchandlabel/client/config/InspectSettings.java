@@ -1,5 +1,6 @@
 package com.latchandlabel.client.config;
 
+/** Runtime settings for the container inspection overlay (range and activation mode). */
 public final class InspectSettings {
     private static int inspectRange = 8;
     private static InspectActivationMode activationMode = InspectActivationMode.ALT_OR_SHIFT;

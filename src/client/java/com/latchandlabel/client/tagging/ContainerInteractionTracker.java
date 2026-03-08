@@ -10,6 +10,10 @@ import net.minecraft.util.math.BlockPos;
 
 import java.util.Optional;
 
+/**
+ * Tracks the most recently right-clicked container block as a fallback for
+ * resolving which container a screen belongs to when crosshair targeting fails.
+ */
 public final class ContainerInteractionTracker {
     private static final long INTERACTION_TTL_MS = 60_000L;
 

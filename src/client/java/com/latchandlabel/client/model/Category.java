@@ -4,6 +4,10 @@ import net.minecraft.util.Identifier;
 
 import java.util.Objects;
 
+/**
+ * Immutable representation of a user-defined storage category (e.g. "Tools", "Food").
+ * Validated on construction: id and name must be non-blank, iconItemId must be non-null.
+ */
 public record Category(
         String id,
         String name,

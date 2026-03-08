@@ -19,6 +19,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+/**
+ * Reads and writes the mod's JSON configuration file ({@code client_config.json}).
+ * On startup, loads persisted settings into the various settings holders; writes
+ * defaults if the file is missing or corrupt.
+ */
 public final class ClientConfigManager {
     private static final int CURRENT_VERSION = 1;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();

@@ -14,6 +14,10 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Resolves a block position to its canonical {@link ChestKey}, handling double-chest
+ * normalization so that both halves share a single key (the one with the lower position).
+ */
 public final class StorageKeyResolver {
     private StorageKeyResolver() {
     }
