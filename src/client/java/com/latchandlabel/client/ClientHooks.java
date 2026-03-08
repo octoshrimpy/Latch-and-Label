@@ -6,9 +6,10 @@ import com.latchandlabel.client.tagging.ContainerInteractionTracker;
 import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagReconciler;
 import com.latchandlabel.client.ui.ContainerTagButtonManager;
+import com.latchandlabel.client.dump.DumpCommand;
+import com.latchandlabel.client.dump.DumpService;
 import com.latchandlabel.client.find.FindCommand;
 import com.latchandlabel.client.find.FindHighlightRenderer;
-import com.latchandlabel.client.find.FindOverlayListHud;
 import com.latchandlabel.client.find.FindScanService;
 import com.latchandlabel.client.find.NearbyChestScanner;
 import com.latchandlabel.client.inspect.FocusedTagBillboardRenderer;
@@ -32,7 +33,6 @@ public final class ClientHooks {
         AltClickMoveToStorageHandler.register();
         ContainerInteractionTracker.register();
         ShulkerItemCategoryBridge.register();
-        FindOverlayListHud.register();
         FocusedTagBillboardRenderer.registerHud();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             TagScopeResolver.ResolvedScope resolvedScope = TagScopeResolver.resolveCurrentScope(client);
@@ -47,12 +47,14 @@ public final class ClientHooks {
         });
         ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(NearbyChestScanner::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(DumpService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(StorageTagReconciler::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(ShulkerItemCategoryBridge::onClientTick);
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             FindCommand.register(dispatcher);
             ConfigCommand.register(dispatcher);
+            DumpCommand.register(dispatcher);
         });
 
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {

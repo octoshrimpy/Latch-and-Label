@@ -12,23 +12,9 @@ import java.util.Locale;
 import java.util.function.Predicate;
 
 public final class RenderLayerCompat {
-    private static volatile RenderLayer linesLayer;
     private static volatile RenderLayer debugFilledBoxLayer;
 
     private RenderLayerCompat() {
-    }
-
-    public static RenderLayer lines() {
-        RenderLayer cached = linesLayer;
-        if (cached != null) {
-            return cached;
-        }
-        synchronized (RenderLayerCompat.class) {
-            if (linesLayer == null) {
-                linesLayer = resolveLayer(name -> name.contains("lines") && !name.contains("translucent"));
-            }
-            return linesLayer;
-        }
     }
 
     public static RenderLayer debugFilledBox() {

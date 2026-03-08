@@ -5,7 +5,6 @@ import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
-import com.latchandlabel.client.render.RenderBox;
 import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -16,8 +15,16 @@ import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.ChestBlock;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.enums.ChestType;
+import net.minecraft.inventory.Inventory;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
@@ -44,6 +51,7 @@ public final class InspectModeRenderer {
     private static final double MATCH_PULSE_SPEED_RADIANS = 6.0;
     private static final double MATCH_PULSE_MIN_SCALE = 1.0;
     private static final double MATCH_PULSE_MAX_SCALE = 1.35;
+    private static final float FULL_OUTLINE_ALPHA = 0.15f;
 
     private InspectModeRenderer() {
     }
@@ -72,7 +80,6 @@ public final class InspectModeRenderer {
         long frameParity = world.getTime() & 1L;
         Frustum frustum = context.worldRenderer().getCapturedFrustum();
 
-        VertexConsumer lineConsumer = consumers.getBuffer(RenderLayerCompat.lines());
         VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
         Map<ChestKey, String> tags = LatchLabelClientState.tagStore().snapshotTags();
         Optional<String> heldItemCategoryId = LatchLabelClientState.itemCategoryMappingService()
@@ -125,7 +132,8 @@ public final class InspectModeRenderer {
             float g = ((rgb >> 8) & 0xFF) / 255.0f;
             float b = (rgb & 0xFF) / 255.0f;
 
-            candidates.add(new InspectCandidate(box, distanceSq, matchesHeldCategory, r, g, b));
+            boolean isFull = isStorageFull(world, key.pos());
+            candidates.add(new InspectCandidate(box, distanceSq, matchesHeldCategory, isFull, r, g, b));
         }
 
         candidates.sort(Comparator.comparingDouble(InspectCandidate::distanceSq));
@@ -141,15 +149,24 @@ public final class InspectModeRenderer {
             float b = candidate.b();
             double distanceSq = candidate.distanceSq();
 
-            if (candidate.matchesHeldCategory()) {
+            float alpha;
+            if (candidate.isFull()) {
+                alpha = FULL_OUTLINE_ALPHA;
+            } else if (candidate.matchesHeldCategory()) {
+                alpha = MATCH_OUTLINE_ALPHA;
+            } else {
+                alpha = BASE_OUTLINE_ALPHA;
+            }
+
+            if (candidate.matchesHeldCategory() && !candidate.isFull()) {
                 double thickness = distanceSq <= nearDistanceSq
                         ? THICK_NEAR * pulseScale
                         : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, MATCH_OUTLINE_ALPHA);
+                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
             } else if (distanceSq <= nearDistanceSq) {
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) THIN_NEAR, r, g, b, BASE_OUTLINE_ALPHA);
+                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) THIN_NEAR, r, g, b, alpha);
             } else {
-                RenderBox.drawBox(matrices.peek(), lineConsumer, box.expand(BASE_OUTLINE_EXPAND), r, g, b, BASE_OUTLINE_ALPHA);
+                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) THICK_FAR, r, g, b, alpha);
             }
             rendered++;
         }
@@ -161,10 +178,49 @@ public final class InspectModeRenderer {
         return distanceSq <= maxDistanceSq;
     }
 
+    private static boolean isStorageFull(World world, BlockPos pos) {
+        BlockEntity blockEntity = world.getBlockEntity(pos);
+        if (!(blockEntity instanceof Inventory inventory)) {
+            return false;
+        }
+
+        // For double chests, also check the partner
+        BlockState state = world.getBlockState(pos);
+        if (state.getBlock() instanceof ChestBlock) {
+            ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+            if (chestType != ChestType.SINGLE) {
+                Direction facing = state.get(ChestBlock.FACING);
+                Direction partnerDir = chestType == ChestType.LEFT
+                        ? facing.rotateYClockwise()
+                        : facing.rotateYCounterclockwise();
+                BlockPos partnerPos = pos.offset(partnerDir);
+                BlockEntity partnerEntity = world.getBlockEntity(partnerPos);
+                if (partnerEntity instanceof Inventory partnerInv) {
+                    if (!isInventoryFull(partnerInv)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return isInventoryFull(inventory);
+    }
+
+    private static boolean isInventoryFull(Inventory inventory) {
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (stack.isEmpty() || stack.getCount() < stack.getMaxCount()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private record InspectCandidate(
             Box box,
             double distanceSq,
             boolean matchesHeldCategory,
+            boolean isFull,
             float r,
             float g,
             float b

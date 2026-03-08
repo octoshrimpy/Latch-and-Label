@@ -34,8 +34,6 @@
   "latchlabel.find.result_exact": "exact",
   "latchlabel.find.result_variant": "variant",
   "latchlabel.find.result_possible": "possible",
-  "latchlabel.find.overlay.title": "Find Results",
-  "latchlabel.find.overlay.entry": "%s | %sm | %s",
   "latchlabel.find.variant_on": "variants on",
   "latchlabel.find.variant_off": "variants off",
   "latchlabel.tooltip.category": "%s",
@@ -56,8 +54,8 @@
   "screen.latchlabel.config.inspect_mode_label": "Inspection mode trigger",
   "screen.latchlabel.config.find_radius_label": "Default find radius",
   "screen.latchlabel.config.highlight_duration_label": "Highlight duration (seconds)",
+  "screen.latchlabel.config.dump_range_label": "Dump range (blocks)",
   "screen.latchlabel.config.variant_matching_label": "Variant matching",
-  "screen.latchlabel.config.overlay_list_label": "Find overlay list",
   "screen.latchlabel.config.allow_f_label": "Allow /f command alias",
   "screen.latchlabel.config.find_keybind_label": "Allow find shortcut keybind",
   "screen.latchlabel.config.move_source_label": "Move-to-storage source",
@@ -72,7 +70,6 @@
   "screen.latchlabel.config.highlight_duration": "Highlight duration: %ss",
   "screen.latchlabel.config.highlight_duration_hint": "Use +/- to adjust (saved immediately)",
   "screen.latchlabel.config.variant_matching": "Variant matching: %s",
-  "screen.latchlabel.config.overlay_list": "Find overlay list: %s",
   "screen.latchlabel.config.book_export": "Export to Book",
   "screen.latchlabel.config.book_export_label": "Export tags to held Book & Quill",
   "screen.latchlabel.config.book_import": "Import from Book",
@@ -91,5 +88,9 @@
   "latchlabel.book.error_invalid_data": "Failed to parse book data: %s",
   "latchlabel.book.error_data_too_large": "Tag data is too large for a book (%s pages needed, max %s).",
   "latchlabel.book.export_success": "Exported to book (%s pages, %s tags, %s categories).",
-  "latchlabel.book.import_success": "Imported %s tags and %s categories from book."
+  "latchlabel.book.import_success": "Imported %s tags and %s categories from book.",
+  "latchlabel.dump.no_matching_items": "No inventory items match any tagged containers.",
+  "latchlabel.dump.no_containers_in_range": "No matching tagged containers in range.",
+  "latchlabel.dump.starting": "Dumping into %s container(s)...",
+  "latchlabel.dump.done": "Dump complete. Visited %s container(s)."
 }

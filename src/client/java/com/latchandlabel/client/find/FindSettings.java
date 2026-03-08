@@ -3,7 +3,6 @@ package com.latchandlabel.client.find;
 public final class FindSettings {
     private static int defaultFindRadius = 24;
     private static boolean variantMatchingEnabled = true;
-    private static boolean enableFindOverlayList;
     private static boolean allowSlashFCommand = true;
     private static boolean allowFindKeybind = true;
     private static boolean autoRefreshContents = false;
@@ -17,10 +16,6 @@ public final class FindSettings {
 
     public static boolean variantMatchingEnabled() {
         return variantMatchingEnabled;
-    }
-
-    public static boolean enableFindOverlayList() {
-        return enableFindOverlayList;
     }
 
     public static boolean allowSlashFCommand() {
@@ -37,10 +32,6 @@ public final class FindSettings {
 
     public static void setVariantMatchingEnabled(boolean enabled) {
         variantMatchingEnabled = enabled;
-    }
-
-    public static void setEnableFindOverlayList(boolean enabled) {
-        enableFindOverlayList = enabled;
     }
 
     public static void setAllowSlashFCommand(boolean enabled) {

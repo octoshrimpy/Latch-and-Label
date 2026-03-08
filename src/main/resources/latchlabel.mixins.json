@@ -4,7 +4,8 @@
   "refmap": "latchlabel.refmap.json",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "client.HandledScreenSlotBackgroundLayerMixin"
+    "client.HandledScreenSlotBackgroundLayerMixin",
+    "client.HandledScreenBookAltClickMixin"
   ],
   "injectors": {
     "defaultRequire": 1

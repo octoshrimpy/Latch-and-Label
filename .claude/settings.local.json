@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"/var/home/octoshrimpy/projects/Latch & Label\")",
+      "Bash(find \"/var/home/octoshrimpy/projects/Latch & Label/src/client/java/com/latchandlabel/mixin\" -type f -name \"*.java\")"
+    ]
+  }
+}

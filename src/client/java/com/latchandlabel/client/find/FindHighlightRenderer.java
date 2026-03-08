@@ -2,7 +2,6 @@ package com.latchandlabel.client.find;
 
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
-import com.latchandlabel.client.render.RenderBox;
 import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -78,7 +77,6 @@ public final class FindHighlightRenderer {
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
         long frameParity = world.getTime() & 1L;
         Frustum frustum = context.worldRenderer().getCapturedFrustum();
-        VertexConsumer lineConsumer = consumers.getBuffer(RenderLayerCompat.lines());
         VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
 
         matrices.push();
@@ -162,9 +160,6 @@ public final class FindHighlightRenderer {
                 alpha = MATCH_ALPHA;
             }
             ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, alpha);
-            if (distanceSq > nearDistanceSq) {
-                RenderBox.drawBox(matrices.peek(), lineConsumer, box.expand(OUTLINE_BASE_EXPAND), r, g, b, MATCH_ALPHA);
-            }
 
             if (candidate.focused() && !candidate.isPossible()) {
                 double focusThickness = candidate.shouldPulse() ? FOCUS_THICK * pulseScale : FOCUS_THICK;

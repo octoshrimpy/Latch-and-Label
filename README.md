@@ -3,48 +3,107 @@
 Client-side Fabric mod for chest tagging and item finding.
 
 ## Features
-- Tag placed inventory blocks (any block entity inventory, plus ender chests) with categories.
+- Tag placed inventory blocks (any block entity inventory, plus ender chests) with custom categories.
+- Create and manage categories with custom name, color (RGB picker), icon item, visibility, and sort order.
+- Map items to categories with a visual editor; shift-hold tooltip shows an item's mapped category.
 - Quick apply (`Shift + Open Category Picker`) and quick clear (`Ctrl + Open Category Picker`) for looked-at containers.
 - Category picker UI with search, numeric hotkeys, and recent category row.
 - Container screen tag button for chest-like screens.
-- `/find` command with optional block-variant expansion.
-- Temporary world highlights for find results.
+- `/find` command with item search, category search (`#category`), and optional block-variant expansion.
+- Temporary world highlights for find results with match-type distinction (exact, variant, possible).
 - Optional clickable find overlay list.
-- Shift tooltip category display for mapped items.
+- Inspect mode with color-coded outlines for all nearby tagged containers.
+- Focused tag billboard: shows category name above crosshair when looking at a tagged container in inspect mode.
+- Alt-click auto-move: Alt + click a tagged container to move matching items from your inventory into it.
+- Book export/import for backing up or migrating tags and categories between worlds/servers.
+- Per-world and per-server data scoping with automatic scope detection.
 
 ## Keybinds
-- `Open Category Picker` (default `B`): Open category picker for targeted container.
-- `Shift + Open Category Picker`: Apply last-used category to targeted container.
-- `Ctrl + Open Category Picker`: Clear tag from targeted container.
-- `Run Find Shortcut` (default unbound): Runs find using the main-hand item and default find radius.
+
+| Keybind | Default | Function |
+|---------|---------|----------|
+| `Open Category Picker` | `B` | Open category picker for targeted container |
+| `Shift + Open Category Picker` | | Apply last-used category to targeted container |
+| `Ctrl + Open Category Picker` | | Clear tag from targeted container |
+| `Run Find Shortcut` | Unbound | Run find using the main-hand item and default find radius |
+| `Move to Storage` | Unbound | Move matching items from inventory to looked-at storage |
 
 Notes:
 - The find shortcut can be disabled in Mod Menu settings (`Allow find shortcut keybind`).
 - Inspect mode trigger is configurable in Mod Menu settings:
   - `Alt only`
   - `Shift only` (sneak key)
-  - `Alt or Shift`
+  - `Alt or Shift` (default)
+
+## Commands
+
+### `/find`
+
+Searches nearby loaded storage blocks for items or categories. Scans are client-side.
+
+| Usage | Description |
+|-------|-------------|
+| `/find` | Uses item in main hand |
+| `/find <itemid>` | Find specific item (e.g. `stone`, `minecraft:diamond_ore`) |
+| `/find <itemid> <radius>` | Find item within custom radius (1-256) |
+| `/find #<category>` | Find containers tagged with a category (e.g. `#stones`) |
+| `/find #<category> <radius>` | Category search with custom radius |
+| `/f ...` | Alias for `/find` (when `Allow /f command alias` is enabled) |
+
+**Match types:**
+- **EXACT** — item exactly matches the search target.
+- **VARIANT** — a block variant of the target was found (stairs, slabs, walls, fences, fence gates, buttons, pressure plates). Can be toggled via `Variant matching` setting.
+- **POSSIBLE** — container is tagged with a category that maps to the searched item.
+
+Results are sorted by match type (EXACT > VARIANT > POSSIBLE), then by distance.
+
+### `/latchlabel`
+
+| Usage | Description |
+|-------|-------------|
+| `/latchlabel reload` | Reload all config and data files |
+| `/latchlabel config export [path]` | Export config profile to file |
+| `/latchlabel config import <path>` | Import config profile from file |
+| `/latchlabel book export` | Export tags/categories to a held writable book |
+| `/latchlabel book import` | Import tags/categories from a held written book |
 
 ## Tagging Rules
 - Tagging applies to placed container blocks only.
-- Current supported targets include any placed inventory block entity, plus ender chests.
+- Supported targets: any placed inventory block entity (chests, double chests, barrels, shulker boxes), plus ender chests.
+- Double chests are normalized to a single key; tags persist across chest reconfiguration.
 - Data is client-local and stored in the client config directory.
 
-## Inspect Mode Visuals
-- Inspect mode activation depends on `Inspection mode trigger` setting (Alt, Shift/sneak, or both).
-- Find highlights render as centered half-block boxes.
-- Exact matches and variant matches use different visual styles.
+## Inspect Mode
+- Activation depends on `Inspection mode trigger` setting (Alt, Shift/sneak, or both).
+- Color-coded outlines matching each container's category color.
+- Pulsing effect on containers matching the held item's category.
+- Distance-based level-of-detail rendering (max 72 containers per frame).
+- Focused tag billboard shows the category name above your crosshair when looking at a tagged container.
 
-## `/find` Usage
-- `/find`: uses main hand item.
-- `/find <itemid>`
-- `/find <itemid> <radius>`
-- `/f ...`: same as `/find ...` when `Allow /f command alias` is enabled in settings.
+## Alt-Click Auto-Move
+- Hold Alt and click a tagged storage block to automatically move matching items from your inventory into it.
+- Configurable source via `Move source mode` setting: `inventory` (default) or `inventory + hotbar`.
 
-Notes:
-- Scans are client-side.
-- Results are limited to nearby loaded storage blocks.
-- Inventory matching relies on client-visible inventory data.
+## Book Export/Import
+- Export all tags, categories, and item mappings to a writable book in your hand.
+- Import from a written book to restore data.
+- Useful for backup and migration between servers or worlds.
+- Compact JSON serialization (max 100 pages, 1024 chars per page).
+
+## Config (Mod Menu)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Inspect range | 8 | Block radius for inspect mode visibility |
+| Inspection mode trigger | Alt or Shift | Inspect activation mode |
+| Default find radius | 24 | Default radius for find commands (1-256) |
+| Highlight duration (seconds) | 10 | How long find highlights persist |
+| Variant matching | Enabled | Match block variants (stairs, slabs, etc.) |
+| Show find overlay list | Disabled | Clickable find results list on HUD |
+| Allow /f command alias | Enabled | Enable `/f` shorthand for `/find` |
+| Allow find shortcut keybind | Enabled | Enable find shortcut keybind |
+| Auto-refresh contents | Disabled | Auto-refresh observed container contents |
+| Move source mode | Inventory | Source for alt-click auto-move (`inventory` or `inventory + hotbar`) |
 
 ## Config Files
 All config files are under:

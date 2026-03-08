@@ -6,6 +6,7 @@ import com.latchandlabel.client.config.InspectActivationMode;
 import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
 import com.latchandlabel.client.config.TransferSettings;
+import com.latchandlabel.client.dump.DumpSettings;
 import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import net.minecraft.client.MinecraftClient;
@@ -19,6 +20,8 @@ public final class LatchLabelConfigScreen extends Screen {
     private static final int MAX_INSPECT_RANGE = 32;
     private static final int MIN_FIND_RADIUS = 1;
     private static final int MAX_FIND_RADIUS = 256;
+    private static final int MIN_DUMP_RANGE = 1;
+    private static final int MAX_DUMP_RANGE = 128;
     private static final int MIN_HIGHLIGHT_SECONDS = 1;
     private static final int MAX_HIGHLIGHT_SECONDS = 120;
 
@@ -36,7 +39,6 @@ public final class LatchLabelConfigScreen extends Screen {
 
     private ButtonWidget inspectModeButton;
     private ButtonWidget variantMatchingButton;
-    private ButtonWidget overlayListButton;
     private ButtonWidget slashFButton;
     private ButtonWidget findKeybindButton;
     private ButtonWidget moveSourceButton;
@@ -64,6 +66,7 @@ public final class LatchLabelConfigScreen extends Screen {
         addInspectModeControl();
         addFindRadiusControls();
         addHighlightDurationControls();
+        addDumpRangeControls();
         addToggleControls();
         addBookButtons();
 
@@ -105,9 +108,9 @@ public final class LatchLabelConfigScreen extends Screen {
         y += rowHeight;
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.highlight_duration_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.variant_matching_label"), labelX, y, 0xFFE8E8E8);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.dump_range_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
-        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.overlay_list_label"), labelX, y, 0xFFE8E8E8);
+        context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.variant_matching_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
         context.drawTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.config.allow_f_label"), labelX, y, 0xFFE8E8E8);
         y += rowHeight;
@@ -197,18 +200,25 @@ public final class LatchLabelConfigScreen extends Screen {
         rowY += rowHeight;
     }
 
+    private void addDumpRangeControls() {
+        addStepControl(
+                rowY,
+                DumpSettings.dumpRange(),
+                delta -> {
+                    int next = clamp(DumpSettings.dumpRange() + delta, MIN_DUMP_RANGE, MAX_DUMP_RANGE);
+                    if (next != DumpSettings.dumpRange()) {
+                        DumpSettings.setDumpRange(next);
+                        saveConfig();
+                    }
+                    return DumpSettings.dumpRange();
+                }
+        );
+        rowY += rowHeight;
+    }
+
     private void addToggleControls() {
         variantMatchingButton = addDrawableChild(ButtonWidget.builder(toggleText(FindSettings.variantMatchingEnabled()), button -> {
                     FindSettings.setVariantMatchingEnabled(!FindSettings.variantMatchingEnabled());
-                    saveConfig();
-                    refreshButtonLabels();
-                })
-                .dimensions(controlX, rowY, controlWidth, 20)
-                .build());
-        rowY += rowHeight;
-
-        overlayListButton = addDrawableChild(ButtonWidget.builder(toggleText(FindSettings.enableFindOverlayList()), button -> {
-                    FindSettings.setEnableFindOverlayList(!FindSettings.enableFindOverlayList());
                     saveConfig();
                     refreshButtonLabels();
                 })
@@ -250,6 +260,7 @@ public final class LatchLabelConfigScreen extends Screen {
                 })
                 .dimensions(controlX, rowY, controlWidth, 20)
                 .build());
+        rowY += rowHeight;
     }
 
     private void addBookButtons() {
@@ -309,9 +320,6 @@ public final class LatchLabelConfigScreen extends Screen {
         }
         if (variantMatchingButton != null) {
             variantMatchingButton.setMessage(toggleText(FindSettings.variantMatchingEnabled()));
-        }
-        if (overlayListButton != null) {
-            overlayListButton.setMessage(toggleText(FindSettings.enableFindOverlayList()));
         }
         if (slashFButton != null) {
             slashFButton.setMessage(toggleText(FindSettings.allowSlashFCommand()));
