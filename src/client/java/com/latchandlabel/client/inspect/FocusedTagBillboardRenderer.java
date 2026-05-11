@@ -10,9 +10,9 @@ import com.latchandlabel.client.model.ChestKey;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.core.Direction;
@@ -22,7 +22,7 @@ import java.util.Optional;
 
 // TODO: After ./gradlew genSources, verify:
 //  1. HudElementRegistry.attachElementBefore() exact signature and DeltaTracker/RenderTickCounter param type
-//  2. GuiGraphics.guiWidth() / guiHeight() vs getScaledWindowWidth() / getScaledWindowHeight()
+//  2. GuiGraphicsExtractor.guiWidth() / guiHeight() vs getScaledWindowWidth() / getScaledWindowHeight()
 //  3. client.font vs client.font
 //  4. VanillaHudElements import package
 
@@ -36,12 +36,12 @@ public final class FocusedTagBillboardRenderer {
     public static void registerHud() {
         HudElementRegistry.attachElementBefore(
                 VanillaHudElements.CHAT,
-                ResourceLocation.fromNamespaceAndPath(LatchLabel.MOD_ID, "focused_tag_billboard"),
+                Identifier.fromNamespaceAndPath(LatchLabel.MOD_ID, "focused_tag_billboard"),
                 (context, tickCounter) -> renderHud(context)
         );
     }
 
-    private static void renderHud(GuiGraphics context) {
+    private static void renderHud(GuiGraphicsExtractor context) {
         if (!ClientInputHandler.isInspectModeActive()) {
             return;
         }
@@ -53,15 +53,15 @@ public final class FocusedTagBillboardRenderer {
         }
 
         Component text = Component.literal(focused.displayName());
-        // TODO: verify guiWidth/guiHeight method names in GuiGraphics 26.2
+        // TODO: verify guiWidth/guiHeight method names in GuiGraphicsExtractor 26.2
         int x = (context.guiWidth() / 2) - (client.font.width(text) / 2);
         int y = (context.guiHeight() / 2) + 20;
         int color = focused.isFull() ? FULL_STORAGE_TEXT_COLOR : NORMAL_TEXT_COLOR;
-        context.drawString(client.font, text, x, y, color);
+        context.text(client.font, text, x, y, color);
     }
 
     private static FocusedCategory resolveFocusedCategory(Minecraft client) {
-        if (client == null || client.level == null || client.crosshairTarget == null) {
+        if (client == null || client.level == null || client.hitResult == null) {
             return null;
         }
 
@@ -80,7 +80,7 @@ public final class FocusedTagBillboardRenderer {
             return null;
         }
 
-        if (!(client.crosshairTarget instanceof BlockHitResult hitResult) || hitResult.getType() != HitResult.Type.BLOCK) {
+        if (!(client.hitResult instanceof BlockHitResult hitResult) || hitResult.getType() != HitResult.Type.BLOCK) {
             return null;
         }
 

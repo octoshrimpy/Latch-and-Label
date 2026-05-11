@@ -22,13 +22,13 @@ final class StorageFullness {
 
         BlockState state = world.getBlockState(pos);
         if (state.getBlock() instanceof ChestBlock) {
-            ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+            ChestType chestType = state.getValue(ChestBlock.TYPE);
             if (chestType != ChestType.SINGLE) {
-                Direction facing = state.get(ChestBlock.FACING);
+                Direction facing = state.getValue(ChestBlock.FACING);
                 Direction partnerDir = chestType == ChestType.LEFT
-                        ? facing.rotateYClockwise()
-                        : facing.rotateYCounterclockwise();
-                BlockPos partnerPos = pos.offset(partnerDir);
+                        ? facing.getClockWise()
+                        : facing.getCounterClockWise();
+                BlockPos partnerPos = pos.relative(partnerDir);
                 BlockEntity partnerEntity = world.getBlockEntity(partnerPos);
                 if (partnerEntity instanceof Container partnerInv && !isInventoryFull(partnerInv)) {
                     return false;
@@ -40,9 +40,9 @@ final class StorageFullness {
     }
 
     private static boolean isInventoryFull(Container inventory) {
-        for (int slot = 0; slot < inventory.size(); slot++) {
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty() || stack.getCount() < stack.getMaxCount()) {
+            if (stack.isEmpty() || stack.getCount() < stack.getItem().getDefaultMaxStackSize()) {
                 return false;
             }
         }

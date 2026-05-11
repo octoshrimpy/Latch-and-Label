@@ -60,14 +60,11 @@ tasks.named("test", Test) {
     useJUnitPlatform()
 }
 
-tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
-}
-
 java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
 }
 
 processResources {

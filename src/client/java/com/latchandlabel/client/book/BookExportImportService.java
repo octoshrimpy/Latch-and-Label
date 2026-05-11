@@ -20,9 +20,9 @@ import net.minecraft.world.item.component.WrittenBookContent;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
-import net.minecraft.util.FilteredText;
+import net.minecraft.server.network.Filterable;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -65,8 +65,8 @@ public final class BookExportImportService {
         Map<ChestKey, String> tags = tagStore.snapshotTags();
         String lastUsedCategoryId = tagStore.getLastUsedCategoryId().orElse(null);
         List<Category> categories = categoryStore.listAll();
-        Map<ResourceLocation, String> overrides = mappingService.snapshotOverrides();
-        Set<ResourceLocation> blocked = mappingService.snapshotBlockedMappings();
+        Map<Identifier, String> overrides = mappingService.snapshotOverrides();
+        Set<Identifier> blocked = mappingService.snapshotBlockedMappings();
 
         String json = serializeToJson(tags, lastUsedCategoryId, categories, overrides, blocked);
         String payload = HEADER + json;
@@ -183,7 +183,7 @@ public final class BookExportImportService {
                 return null;
             }
             List<String> pages = new ArrayList<>();
-            for (FilteredText page : content.pages()) {
+            for (Filterable<net.minecraft.network.chat.Component> page : content.pages()) {
                 pages.add(page.raw().getString());
             }
             return pages;
@@ -195,7 +195,7 @@ public final class BookExportImportService {
                 return null;
             }
             List<String> pages = new ArrayList<>();
-            for (FilteredText page : content.pages()) {
+            for (Filterable<String> page : content.pages()) {
                 pages.add(page.raw());
             }
             return pages;
@@ -208,8 +208,8 @@ public final class BookExportImportService {
             Map<ChestKey, String> tags,
             String lastUsedCategoryId,
             List<Category> categories,
-            Map<ResourceLocation, String> overrides,
-            Set<ResourceLocation> blocked
+            Map<Identifier, String> overrides,
+            Set<Identifier> blocked
     ) {
         JsonObject root = new JsonObject();
         root.addProperty("v", CURRENT_VERSION);
@@ -239,7 +239,7 @@ public final class BookExportImportService {
 
         if (!overrides.isEmpty()) {
             JsonObject overridesObj = new JsonObject();
-            for (Map.Entry<ResourceLocation, String> entry : overrides.entrySet()) {
+            for (Map.Entry<Identifier, String> entry : overrides.entrySet()) {
                 overridesObj.addProperty(entry.getKey().toString(), entry.getValue());
             }
             root.add("io", overridesObj);
@@ -247,7 +247,7 @@ public final class BookExportImportService {
 
         if (!blocked.isEmpty()) {
             JsonArray blockedArr = new JsonArray();
-            for (ResourceLocation id : blocked) {
+            for (Identifier id : blocked) {
                 blockedArr.add(id.toString());
             }
             root.add("bl", blockedArr);
@@ -299,11 +299,11 @@ public final class BookExportImportService {
             }
         }
 
-        Map<ResourceLocation, String> overrides = new LinkedHashMap<>();
+        Map<Identifier, String> overrides = new LinkedHashMap<>();
         JsonElement ioEl = root.get("io");
         if (ioEl != null && ioEl.isJsonObject()) {
             for (Map.Entry<String, JsonElement> entry : ioEl.getAsJsonObject().entrySet()) {
-                ResourceLocation itemId = ResourceLocation.tryParse(entry.getKey());
+                Identifier itemId = Identifier.tryParse(entry.getKey());
                 if (itemId == null) {
                     continue;
                 }
@@ -313,12 +313,12 @@ public final class BookExportImportService {
             }
         }
 
-        Set<ResourceLocation> blocked = new LinkedHashSet<>();
+        Set<Identifier> blocked = new LinkedHashSet<>();
         JsonElement blEl = root.get("bl");
         if (blEl != null && blEl.isJsonArray()) {
             for (JsonElement el : blEl.getAsJsonArray()) {
                 if (el.isJsonPrimitive()) {
-                    ResourceLocation itemId = ResourceLocation.tryParse(el.getAsString());
+                    Identifier itemId = Identifier.tryParse(el.getAsString());
                     if (itemId != null) {
                         blocked.add(itemId);
                     }
@@ -338,9 +338,9 @@ public final class BookExportImportService {
             return null;
         }
 
-        ResourceLocation iconItemId = ResourceLocation.tryParse(iconItemIdRaw);
+        Identifier iconItemId = Identifier.tryParse(iconItemIdRaw);
         if (iconItemId == null) {
-            iconItemId = ResourceLocation.tryParse("minecraft:stone");
+            iconItemId = Identifier.tryParse("minecraft:stone");
         }
 
         int color = asInt(obj.get("cl"), 0x8A8A8A);
@@ -388,11 +388,11 @@ public final class BookExportImportService {
         }
 
         // Merge item overrides
-        Map<ResourceLocation, String> currentOverrides = new LinkedHashMap<>(mappingService.snapshotOverrides());
-        Set<ResourceLocation> currentBlocked = new LinkedHashSet<>(mappingService.snapshotBlockedMappings());
+        Map<Identifier, String> currentOverrides = new LinkedHashMap<>(mappingService.snapshotOverrides());
+        Set<Identifier> currentBlocked = new LinkedHashSet<>(mappingService.snapshotBlockedMappings());
 
         currentOverrides.putAll(bookData.overrides);
-        for (ResourceLocation blockedId : bookData.blocked) {
+        for (Identifier blockedId : bookData.blocked) {
             currentOverrides.remove(blockedId);
             currentBlocked.add(blockedId);
         }
@@ -460,8 +460,8 @@ public final class BookExportImportService {
             Map<ChestKey, String> tags,
             String lastUsedCategoryId,
             List<Category> categories,
-            Map<ResourceLocation, String> overrides,
-            Set<ResourceLocation> blocked
+            Map<Identifier, String> overrides,
+            Set<Identifier> blocked
     ) {
     }
 }

@@ -9,14 +9,14 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.Category;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.Locale;
@@ -37,13 +37,13 @@ public final class FindCommand {
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         dispatcher.register(buildFindLiteral("find"));
         dispatcher.register(
-                ClientCommandManager.literal("f")
+                ClientCommands.literal("f")
                         .requires(source -> FindSettings.allowSlashFCommand())
                         .executes(FindCommand::executeNoArgs)
-                        .then(ClientCommandManager.argument(ARG_ITEM_ID, StringArgumentType.word())
+                        .then(ClientCommands.argument(ARG_ITEM_ID, StringArgumentType.word())
                                 .suggests(FindCommand::suggestItems)
                                 .executes(FindCommand::executeWithItem)
-                                .then(ClientCommandManager.argument(ARG_RADIUS, IntegerArgumentType.integer(1, 256))
+                                .then(ClientCommands.argument(ARG_RADIUS, IntegerArgumentType.integer(1, 256))
                                         .executes(FindCommand::executeWithItemAndRadius)
                                 )
                         )
@@ -57,7 +57,7 @@ public final class FindCommand {
 
         Item mainhandItem = client.player.getMainHandItem().getItem();
         if (mainhandItem == Items.AIR) {
-            client.player.sendMessage(Component.translatable("latchlabel.find.error_mainhand_empty"), true);
+            client.player.sendOverlayMessage(Component.translatable("latchlabel.find.error_mainhand_empty"));
             return 0;
         }
 
@@ -123,13 +123,13 @@ public final class FindCommand {
         long startedAtNs = System.nanoTime();
         if (client.level == null || client.player == null) {
             if (client.player != null) {
-                client.player.sendMessage(Component.translatable("latchlabel.find.error_world_unavailable"), true);
+                client.player.sendOverlayMessage(Component.translatable("latchlabel.find.error_world_unavailable"));
             }
             return 0;
         }
 
         VariantMatcher.VariantMatchResult matchResult = VARIANT_MATCHER.resolve(targetItem);
-        ResourceLocation targetId = BuiltInRegistries.ITEM.getKey(targetItem).location();
+        Identifier targetId = BuiltInRegistries.ITEM.getKey(targetItem);
         List<FindScanService.FindMatch> results = FIND_SCAN_SERVICE.scan(client, targetItem, matchResult.matchSet(), radius);
         FindResultState.publish(results);
         FindResultState.highlightItems(targetItem, matchResult.matchSet(), FindResultState.getHighlightDurationMs());
@@ -146,11 +146,8 @@ public final class FindCommand {
             }
         }
         NearbyChestScanner.scheduleNearby(client, radius, targetItem, matchResult.matchSet());
-        if (client.inGameHud != null) {
-            client.inGameHud.setOverlayMessage(
-                    Component.translatable("latchlabel.find.feedback_results_count", results.size()),
-                    false
-            );
+        if (client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable("latchlabel.find.feedback_results_count", results.size()));
         }
 
         LatchLabel.LOGGER.info(
@@ -172,7 +169,7 @@ public final class FindCommand {
     private static int runFindByTag(Minecraft client, String categoryId, int radius) {
         if (client.level == null || client.player == null) {
             if (client.player != null) {
-                client.player.sendMessage(Component.translatable("latchlabel.find.error_world_unavailable"), true);
+                client.player.sendOverlayMessage(Component.translatable("latchlabel.find.error_world_unavailable"));
             }
             return 0;
         }
@@ -187,11 +184,8 @@ public final class FindCommand {
             }
             FindResultState.focusAll(allMatchKeys, FindResultState.getHighlightDurationMs());
         }
-        if (client.inGameHud != null) {
-            client.inGameHud.setOverlayMessage(
-                    Component.translatable("latchlabel.find.feedback_results_count", results.size()),
-                    false
-            );
+        if (client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable("latchlabel.find.feedback_results_count", results.size()));
         }
         NearbyChestScanner.scheduleNearbyByCategory(client, radius, categoryId);
         return results.size();
@@ -216,12 +210,12 @@ public final class FindCommand {
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildFindLiteral(String name) {
-        return ClientCommandManager.literal(name)
+        return ClientCommands.literal(name)
                 .executes(FindCommand::executeNoArgs)
-                .then(ClientCommandManager.argument(ARG_ITEM_ID, StringArgumentType.word())
+                .then(ClientCommands.argument(ARG_ITEM_ID, StringArgumentType.word())
                         .suggests(FindCommand::suggestItems)
                         .executes(FindCommand::executeWithItem)
-                        .then(ClientCommandManager.argument(ARG_RADIUS, IntegerArgumentType.integer(1, 256))
+                        .then(ClientCommands.argument(ARG_RADIUS, IntegerArgumentType.integer(1, 256))
                                 .executes(FindCommand::executeWithItemAndRadius)
                         )
                 );
@@ -229,15 +223,15 @@ public final class FindCommand {
 
     private static Optional<Item> parseItemId(String rawItemId) {
         String normalized = rawItemId == null ? "" : rawItemId.trim().toLowerCase();
-        ResourceLocation itemId = ResourceLocation.tryParse(normalized);
+        Identifier itemId = Identifier.tryParse(normalized);
         if (itemId == null && !normalized.isEmpty() && normalized.indexOf(':') < 0) {
-            itemId = ResourceLocation.tryParse("minecraft:" + normalized);
+            itemId = Identifier.tryParse("minecraft:" + normalized);
         }
         if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) {
             return Optional.empty();
         }
 
-        Item item = BuiltInRegistries.ITEM.get(itemId);
+        Item item = BuiltInRegistries.ITEM.getValue(itemId);
         if (item == Items.AIR) {
             return Optional.empty();
         }
@@ -257,14 +251,14 @@ public final class FindCommand {
             for (Category category : LatchLabelClientState.categoryStore().listAll()) {
                 String suggestion = "#" + category.id();
                 if (suggestion.toLowerCase(Locale.ROOT).startsWith(remaining)) {
-                    builder.suggest(suggestion, net.minecraft.text.Component.literal(category.name()));
+                    builder.suggest(suggestion, net.minecraft.network.chat.Component.literal(category.name()));
                 }
             }
             return builder.buildFuture();
         }
 
         boolean usingNamespace = remaining.indexOf(':') >= 0;
-        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+        for (Identifier itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null) {
                 continue;
             }
@@ -284,7 +278,7 @@ public final class FindCommand {
 
         if (remaining.isEmpty() || "#".startsWith(remaining)) {
             for (Category category : LatchLabelClientState.categoryStore().listAll()) {
-                builder.suggest("#" + category.id(), net.minecraft.text.Component.literal(category.name()));
+                builder.suggest("#" + category.id(), net.minecraft.network.chat.Component.literal(category.name()));
             }
         }
 

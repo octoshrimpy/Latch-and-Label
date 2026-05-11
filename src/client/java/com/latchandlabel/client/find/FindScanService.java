@@ -14,7 +14,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -41,10 +41,10 @@ public final class FindScanService {
 
         Level world = client.level;
         Player player = client.player;
-        ResourceLocation dimensionId = world.dimension().location();
+        Identifier dimensionId = world.dimension().identifier();
         double maxDistanceSq = (double) radius * radius;
         String targetCategoryId = LatchLabelClientState.itemCategoryMappingService()
-                .categoryIdFor(BuiltInRegistries.ITEM.getKey(targetItem).location())
+                .categoryIdFor(BuiltInRegistries.ITEM.getKey(targetItem))
                 .orElse(null);
         Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
         cacheOpenScreenContents(client, currentScreenChestKey);
@@ -89,7 +89,7 @@ public final class FindScanService {
 
     private static boolean isCandidateInScope(
             ChestKey chestKey,
-            ResourceLocation dimensionId,
+            Identifier dimensionId,
             Player player,
             double maxDistanceSq,
             Level world
@@ -133,7 +133,7 @@ public final class FindScanService {
 
         Level world = client.level;
         Player player = client.player;
-        ResourceLocation dimensionId = world.dimension().location();
+        Identifier dimensionId = world.dimension().identifier();
         double maxDistanceSq = (double) radius * radius;
         Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
         cacheOpenScreenContents(client, currentScreenChestKey);
@@ -180,10 +180,10 @@ public final class FindScanService {
     }
 
     private static Optional<ChestKey> resolveCurrentScreenChestKey(Minecraft client) {
-        if (client.currentScreen == null) {
+        if (client.gui.screen() == null) {
             return Optional.empty();
         }
-        return ContainerScreenContextResolver.resolve(client, client.currentScreen);
+        return ContainerScreenContextResolver.resolve(client, client.gui.screen());
     }
 
     private static void cacheOpenScreenContents(Minecraft client, Optional<ChestKey> currentScreenChestKey) {
@@ -196,7 +196,7 @@ public final class FindScanService {
 
         Set<Item> observedItems = new LinkedHashSet<>();
         for (var slot : client.player.containerMenu.slots) {
-            if (slot.inventory instanceof Container) {
+            if (slot.container instanceof Container) {
                 continue;
             }
 
@@ -252,17 +252,17 @@ public final class FindScanService {
         Set<ChestKey> discovered = new LinkedHashSet<>();
         for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
             for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!world.hasChunkAt(chunkX, chunkZ)) {
+                if (!world.getChunkSource().hasChunk(chunkX, chunkZ)) {
                     continue;
                 }
 
-                WorldChunk chunk = world.getChunk(chunkX, chunkZ);
+                LevelChunk chunk = world.getChunk(chunkX, chunkZ);
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                     if (!TrackableStorage.isTrackableStorage(blockEntity)) {
                         continue;
                     }
 
-                    BlockPos pos = blockEntity.getPos();
+                    BlockPos pos = blockEntity.getBlockPos();
                     if (!isWithinRange(player, pos, maxDistanceSq)) {
                         continue;
                     }
@@ -285,7 +285,7 @@ public final class FindScanService {
     private static MatchType detectMatchType(Container inventory, Item targetItem, Set<Item> matchSet) {
         boolean variantFound = false;
 
-        for (int slot = 0; slot < inventory.size(); slot++) {
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
             if (stack.isEmpty()) {
                 continue;
@@ -319,7 +319,7 @@ public final class FindScanService {
         AbstractContainerMenu handler = client.player.containerMenu;
         boolean variantFound = false;
         for (var slot : handler.slots) {
-            if (slot.inventory instanceof Container) {
+            if (slot.container instanceof Container) {
                 continue;
             }
 

@@ -1,18 +1,18 @@
 package com.latchandlabel.client.ui;
 
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.GuiGraphics;
-// TODO: verify Click package after ./gradlew genSources — was net.minecraft.client.gui.Click in 1.21.11
-import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+// TODO: verify MouseButtonEvent package after ./gradlew genSources — was net.minecraft.client.gui.MouseButtonEvent in 1.21.11
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -31,15 +31,15 @@ public final class CategoryIconPickerScreen extends Screen {
     private static final int PAGE_SIZE = GRID_COLUMNS * GRID_ROWS;
 
     private final Screen parent;
-    private final Consumer<ResourceLocation> onSelect;
-    private final List<ResourceLocation> filteredItemIds = new ArrayList<>();
-    private final ResourceLocation airItemId = BuiltInRegistries.ITEM.getKey(Items.AIR).location();
+    private final Consumer<Identifier> onSelect;
+    private final List<Identifier> filteredItemIds = new ArrayList<>();
+    private final Identifier airItemId = BuiltInRegistries.ITEM.getKey(Items.AIR);
 
     private EditBox searchField;
     private int pageIndex;
-    private ResourceLocation selectedItemId;
+    private Identifier selectedItemId;
 
-    public CategoryIconPickerScreen(Screen parent, String categoryName, ResourceLocation currentIconId, Consumer<ResourceLocation> onSelect) {
+    public CategoryIconPickerScreen(Screen parent, String categoryName, Identifier currentIconId, Consumer<Identifier> onSelect) {
         super(Component.translatable("screen.latchlabel.category_icon_picker.title", categoryName));
         this.parent = parent;
         this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
@@ -51,39 +51,39 @@ public final class CategoryIconPickerScreen extends Screen {
         int panelLeft = (width - PANEL_WIDTH) / 2;
         int panelTop = (height - PANEL_HEIGHT) / 2;
 
-        searchField = new EditBox(textRenderer, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, .Component.empty());
-        searchField.setChangedListener(value -> refilter());
+        searchField = new EditBox(font, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, Component.empty());
+        searchField.setResponder(value -> refilter());
         searchField.setMaxLength(80);
-        addDrawableChild(searchField);
+        addRenderableWidget(searchField);
         setInitialFocus(searchField);
         searchField.setFocused(true);
 
-        addDrawableChild(Button.builder(Component.translatable("gui.back"), button -> close())
-                .dimensions(panelLeft + 10, panelTop + PANEL_HEIGHT - 24, 60, 16)
+        addRenderableWidget(Button.builder(Component.translatable("gui.back"), button -> onClose())
+                .pos(panelLeft + 10, panelTop + PANEL_HEIGHT - 24).size(60, 16)
                 .build());
 
-        addDrawableChild(Button.builder(Component.literal("<"), button -> {
+        addRenderableWidget(Button.builder(Component.literal("<"), button -> {
                     if (pageIndex > 0) {
                         pageIndex--;
                     }
                 })
-                .dimensions(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24, 20, 16)
+                .pos(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24).size(20, 16)
                 .build());
 
-        addDrawableChild(Button.builder(Component.literal(">"), button -> {
+        addRenderableWidget(Button.builder(Component.literal(">"), button -> {
                     int maxPage = maxPageIndex();
                     if (pageIndex < maxPage) {
                         pageIndex++;
                     }
                 })
-                .dimensions(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24, 20, 16)
+                .pos(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24).size(20, 16)
                 .build());
 
         refilter();
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
@@ -93,34 +93,34 @@ public final class CategoryIconPickerScreen extends Screen {
         int gridLeft = panelLeft + (PANEL_WIDTH - gridWidth) / 2;
 
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
-        context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
-        context.drawString(textRenderer, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
+        GuiUtils.drawBorder(context, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
+        context.text(font, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
 
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
 
-        ResourceLocation hoveredItemId = null;
+        Identifier hoveredItemId = null;
         int start = pageIndex * PAGE_SIZE;
         int end = Math.min(filteredItemIds.size(), start + PAGE_SIZE);
         for (int i = start; i < end; i++) {
             int slotIndex = i - start;
-            ResourceLocation itemId = filteredItemIds.get(i);
+            Identifier itemId = filteredItemIds.get(i);
             if (drawSlot(context, gridLeft, gridTop, slotIndex, itemId, mouseX, mouseY)) {
                 hoveredItemId = itemId;
             }
         }
 
         if (hoveredItemId != null) {
-            context.drawTooltip(textRenderer, Component.literal(hoveredItemId.toString()), mouseX, mouseY);
+            context.setTooltipForNextFrame(font, Component.literal(hoveredItemId.toString()), mouseX, mouseY);
         }
     }
 
     @Override
-    public void renderBackground(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         // We draw a custom translucent background in render(); skip Screen's blur pass.
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean consumed) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean consumed) {
         if (super.mouseClicked(click, consumed)) {
             return true;
         }
@@ -149,19 +149,19 @@ public final class CategoryIconPickerScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput keyInput) {
+    public boolean keyPressed(KeyEvent keyInput) {
         if (searchField != null && searchField.keyPressed(keyInput)) {
             return true;
         }
 
         int keyCode = keyInput.key();
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            close();
+            onClose();
             return true;
         }
 
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-            ResourceLocation firstItem = firstVisibleItemId();
+            Identifier firstItem = firstVisibleItemId();
             if (firstItem != null) {
                 selectAndClose(firstItem);
                 return true;
@@ -172,7 +172,7 @@ public final class CategoryIconPickerScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharInput charInput) {
+    public boolean charTyped(CharacterEvent charInput) {
         if (searchField != null && searchField.charTyped(charInput)) {
             return true;
         }
@@ -180,23 +180,23 @@ public final class CategoryIconPickerScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        if (client != null) {
-            client.setScreen(parent);
+    public void onClose() {
+        if (minecraft != null) {
+            minecraft.gui.setScreen(parent);
         }
     }
 
-    private void selectAndClose(ResourceLocation itemId) {
+    private void selectAndClose(Identifier itemId) {
         selectedItemId = itemId;
         onSelect.accept(itemId);
-        close();
+        onClose();
     }
 
     private void refilter() {
-        String query = searchField == null ? "" : searchField.getText().toLowerCase(Locale.ROOT).trim();
+        String query = searchField == null ? "" : searchField.getValue().toLowerCase(Locale.ROOT).trim();
 
         filteredItemIds.clear();
-        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+        for (Identifier itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null || itemId.equals(airItemId)) {
                 continue;
             }
@@ -207,11 +207,11 @@ public final class CategoryIconPickerScreen extends Screen {
             filteredItemIds.add(itemId);
         }
 
-        filteredItemIds.sort(Comparator.comparing(ResourceLocation::toString));
+        filteredItemIds.sort(Comparator.comparing(Identifier::toString));
         pageIndex = 0;
     }
 
-    private boolean drawSlot(GuiGraphics context, int gridLeft, int gridTop, int slotIndex, ResourceLocation itemId, int mouseX, int mouseY) {
+    private boolean drawSlot(GuiGraphicsExtractor context, int gridLeft, int gridTop, int slotIndex, Identifier itemId, int mouseX, int mouseY) {
         int col = slotIndex % GRID_COLUMNS;
         int row = slotIndex / GRID_COLUMNS;
         int x = gridLeft + (col * SLOT_SIZE);
@@ -222,8 +222,8 @@ public final class CategoryIconPickerScreen extends Screen {
         boolean selected = itemId.equals(selectedItemId);
 
         context.fill(x, y, right, bottom, hovered ? 0xCC3A3A3A : 0xCC2A2A2A);
-        context.drawStrokedRectangle(x, y, SLOT_SIZE, SLOT_SIZE, selected ? 0xFFFFFFFF : 0xFF5A5A5A);
-        context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(itemId)), x + 1, y + 1);
+        GuiUtils.drawBorder(context, x, y, SLOT_SIZE, SLOT_SIZE, selected ? 0xFFFFFFFF : 0xFF5A5A5A);
+        context.item(new ItemStack(BuiltInRegistries.ITEM.getValue(itemId)), x + 1, y + 1);
         return hovered;
     }
 
@@ -234,7 +234,7 @@ public final class CategoryIconPickerScreen extends Screen {
         return (filteredItemIds.size() - 1) / PAGE_SIZE;
     }
 
-    private ResourceLocation firstVisibleItemId() {
+    private Identifier firstVisibleItemId() {
         if (filteredItemIds.isEmpty()) {
             return null;
         }

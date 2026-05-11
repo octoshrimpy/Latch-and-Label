@@ -10,14 +10,12 @@ import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.StorageRenderShapeResolver;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.MultiBufferSource;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.Level;
@@ -54,7 +52,7 @@ public final class InspectModeRenderer {
     private InspectModeRenderer() {
     }
 
-    public static void render(WorldRenderContext context) {
+    public static void render(LevelRenderContext context) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.level == null) {
             return;
@@ -63,22 +61,15 @@ public final class InspectModeRenderer {
             return;
         }
 
-        PoseStack matrices = context.matrices();
-        MultiBufferSource consumers = context.consumers();
-        if (matrices == null || consumers == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
-            return;
-        }
-
         Level world = client.level;
-        ResourceLocation dimensionId = world.dimension().location();
-        Vec3 cameraPos = client.gameRenderer.getCamera().getCameraPos();
+        Identifier dimensionId = world.dimension().identifier();
+        Vec3 cameraPos = client.gameRenderer.mainCamera().position();
         double maxDistanceSq = Math.pow(InspectSettings.inspectRange(), 2);
         double nearDistanceSq = LOD_NEAR_DISTANCE * LOD_NEAR_DISTANCE;
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
         long frameParity = world.getGameTime() & 1L;
-        Frustum frustum = context.worldRenderer().getCapturedFrustum();
+        Frustum frustum = context.levelState().cameraRenderState.cullFrustum;
 
-        VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
         Map<ChestKey, String> tags = LatchLabelClientState.tagStore().snapshotTags();
         Optional<String> heldItemCategoryId = LatchLabelClientState.itemCategoryMappingService()
                 .categoryIdFor(client.player.getMainHandItem());
@@ -86,9 +77,6 @@ public final class InspectModeRenderer {
         Set<String> inventoryCategoryIds = isAltDown ? collectMoveCategoryIds(client) : Set.of();
         double pulse = 0.5 + (0.5 * Math.sin((System.currentTimeMillis() / 1000.0) * MATCH_PULSE_SPEED_RADIANS));
         double pulseScale = MATCH_PULSE_MIN_SCALE + ((MATCH_PULSE_MAX_SCALE - MATCH_PULSE_MIN_SCALE) * pulse);
-
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
 
         List<InspectCandidate> candidates = new ArrayList<>();
         Set<ChestKey> renderedKeys = new HashSet<>();
@@ -111,7 +99,7 @@ public final class InspectModeRenderer {
             if (!isWithinRange(distanceSq, maxDistanceSq)) {
                 continue;
             }
-            if (frustum != null && !frustum.isVisible(box.expand(FRUSTUM_MARGIN))) {
+            if (frustum != null && !frustum.isVisible(box.inflate(FRUSTUM_MARGIN))) {
                 continue;
             }
 
@@ -137,49 +125,68 @@ public final class InspectModeRenderer {
             candidates.add(new InspectCandidate(box, distanceSq, matchesHeldCategory, matchesInventoryCategory, isFull, r, g, b));
         }
 
-        candidates.sort(Comparator.comparingDouble(InspectCandidate::distanceSq));
-        int rendered = 0;
-        for (InspectCandidate candidate : candidates) {
-            if (rendered >= MAX_CONTAINERS_PER_FRAME) {
-                break;
-            }
-
-            AABB box = candidate.box();
-            float r = candidate.r();
-            float g = candidate.g();
-            float b = candidate.b();
-            double distanceSq = candidate.distanceSq();
-
-            float alpha;
-            if (candidate.isFull()) {
-                alpha = FULL_OUTLINE_ALPHA;
-            } else if (candidate.matchesHeldCategory()) {
-                alpha = MATCH_OUTLINE_ALPHA;
-            } else if (candidate.matchesInventoryCategory()) {
-                alpha = ALT_TARGET_ALPHA;
-            } else {
-                alpha = BASE_OUTLINE_ALPHA;
-            }
-
-            if (candidate.matchesHeldCategory() && !candidate.isFull()) {
-                double thickness = distanceSq <= nearDistanceSq
-                        ? THICK_NEAR * pulseScale
-                        : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
-            } else if (candidate.matchesInventoryCategory()) {
-                double thickness = distanceSq <= nearDistanceSq
-                        ? ALT_TARGET_NEAR
-                        : (distanceSq <= midDistanceSq ? ALT_TARGET_MID : ALT_TARGET_FAR);
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
-            } else if (distanceSq <= nearDistanceSq) {
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) THIN_NEAR, r, g, b, alpha);
-            } else {
-                ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(BASE_OUTLINE_EXPAND), (float) THICK_FAR, r, g, b, alpha);
-            }
-            rendered++;
+        if (candidates.isEmpty()) {
+            return;
         }
 
-        matrices.pop();
+        candidates.sort(Comparator.comparingDouble(InspectCandidate::distanceSq));
+
+        final double camX = cameraPos.x;
+        final double camY = cameraPos.y;
+        final double camZ = cameraPos.z;
+        final double finalPulseScale = pulseScale;
+        final List<InspectCandidate> finalCandidates = candidates;
+        final double finalNearSq = nearDistanceSq;
+        final double finalMidSq = midDistanceSq;
+
+        PoseStack matrices = context.poseStack();
+        matrices.pushPose();
+        matrices.translate(-camX, -camY, -camZ);
+
+        context.submitNodeCollector().submitCustomGeometry(matrices, RenderLayerCompat.debugFilledBox(), (pose, consumer) -> {
+            int rendered = 0;
+            for (InspectCandidate candidate : finalCandidates) {
+                if (rendered >= MAX_CONTAINERS_PER_FRAME) {
+                    break;
+                }
+
+                AABB box = candidate.box();
+                float r = candidate.r();
+                float g = candidate.g();
+                float b = candidate.b();
+                double distanceSq = candidate.distanceSq();
+
+                float alpha;
+                if (candidate.isFull()) {
+                    alpha = FULL_OUTLINE_ALPHA;
+                } else if (candidate.matchesHeldCategory()) {
+                    alpha = MATCH_OUTLINE_ALPHA;
+                } else if (candidate.matchesInventoryCategory()) {
+                    alpha = ALT_TARGET_ALPHA;
+                } else {
+                    alpha = BASE_OUTLINE_ALPHA;
+                }
+
+                if (candidate.matchesHeldCategory() && !candidate.isFull()) {
+                    double thickness = distanceSq <= finalNearSq
+                            ? THICK_NEAR * finalPulseScale
+                            : (distanceSq <= finalMidSq ? THICK_MID : THICK_FAR);
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
+                } else if (candidate.matchesInventoryCategory()) {
+                    double thickness = distanceSq <= finalNearSq
+                            ? ALT_TARGET_NEAR
+                            : (distanceSq <= finalMidSq ? ALT_TARGET_MID : ALT_TARGET_FAR);
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
+                } else if (distanceSq <= finalNearSq) {
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) THIN_NEAR, r, g, b, alpha);
+                } else {
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) THICK_FAR, r, g, b, alpha);
+                }
+                rendered++;
+            }
+        });
+
+        matrices.popPose();
     }
 
     private static boolean isWithinRange(double distanceSq, double maxDistanceSq) {

@@ -3,7 +3,7 @@ package com.latchandlabel.client.find;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -30,7 +30,7 @@ public final class VariantMatcher {
             return new VariantMatchResult(Set.copyOf(matches), false);
         }
 
-        ResourceLocation targetId = BuiltInRegistries.ITEM.getKey(target).location();
+        Identifier targetId = BuiltInRegistries.ITEM.getKey(target);
         if (targetId == null) {
             return new VariantMatchResult(Set.copyOf(matches), false);
         }
@@ -40,12 +40,12 @@ public final class VariantMatcher {
 
         boolean usedVariants = false;
         for (String suffix : VARIANT_SUFFIXES) {
-            ResourceLocation candidateId = ResourceLocation.tryParse(targetId.getNamespace() + ":" + root + suffix);
+            Identifier candidateId = Identifier.tryParse(targetId.getNamespace() + ":" + root + suffix);
             if (candidateId == null || !BuiltInRegistries.ITEM.containsKey(candidateId)) {
                 continue;
             }
 
-            Item candidate = BuiltInRegistries.ITEM.get(candidateId);
+            Item candidate = BuiltInRegistries.ITEM.getValue(candidateId);
             if (candidate == target) {
                 continue;
             }

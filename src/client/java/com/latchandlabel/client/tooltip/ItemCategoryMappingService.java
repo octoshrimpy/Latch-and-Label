@@ -2,7 +2,7 @@ package com.latchandlabel.client.tooltip;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -26,13 +26,13 @@ public final class ItemCategoryMappingService {
             "special_spawn", "mob_drops"
     );
 
-    private record OverrideSnapshot(Map<ResourceLocation, String> overrides, Set<ResourceLocation> blocked) {}
+    private record OverrideSnapshot(Map<Identifier, String> overrides, Set<Identifier> blocked) {}
 
     private Runnable changeListener = () -> {
     };
-    private Map<ResourceLocation, String> defaultMappings = Map.of();
+    private Map<Identifier, String> defaultMappings = Map.of();
     private volatile OverrideSnapshot overrideSnapshot = new OverrideSnapshot(new LinkedHashMap<>(), new LinkedHashSet<>());
-    private volatile Map<ResourceLocation, String> mergedMappings = Map.of();
+    private volatile Map<Identifier, String> mergedMappings = Map.of();
 
     public void initialize() {
         defaultMappings = ItemCategoryMappings.createDefaults();
@@ -41,7 +41,7 @@ public final class ItemCategoryMappingService {
     }
 
     public void refreshDefaultMappingsIfExpanded() {
-        Map<ResourceLocation, String> refreshed = ItemCategoryMappings.createDefaults();
+        Map<Identifier, String> refreshed = ItemCategoryMappings.createDefaults();
         if (refreshed.size() <= defaultMappings.size()) {
             return;
         }
@@ -61,8 +61,7 @@ public final class ItemCategoryMappingService {
             return Optional.empty();
         }
 
-        var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (itemId == null) {
             return Optional.empty();
         }
@@ -70,14 +69,14 @@ public final class ItemCategoryMappingService {
         return Optional.ofNullable(mergedMappings.get(itemId));
     }
 
-    public Optional<String> categoryIdFor(ResourceLocation itemId) {
+    public Optional<String> categoryIdFor(Identifier itemId) {
         if (itemId == null) {
             return Optional.empty();
         }
         return Optional.ofNullable(mergedMappings.get(itemId));
     }
 
-    public void setOverride(ResourceLocation itemId, String categoryId) {
+    public void setOverride(Identifier itemId, String categoryId) {
         if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) {
             throw new IllegalArgumentException("Unknown item id: " + itemId);
         }
@@ -87,8 +86,8 @@ public final class ItemCategoryMappingService {
         }
 
         OverrideSnapshot snap = overrideSnapshot;
-        Map<ResourceLocation, String> newOverrides = new LinkedHashMap<>(snap.overrides());
-        Set<ResourceLocation> newBlocked = new LinkedHashSet<>(snap.blocked());
+        Map<Identifier, String> newOverrides = new LinkedHashMap<>(snap.overrides());
+        Set<Identifier> newBlocked = new LinkedHashSet<>(snap.blocked());
         newBlocked.remove(itemId);
         newOverrides.put(itemId, normalizedCategoryId);
         overrideSnapshot = new OverrideSnapshot(newOverrides, newBlocked);
@@ -96,7 +95,7 @@ public final class ItemCategoryMappingService {
         notifyChanged();
     }
 
-    public boolean removeOverride(ResourceLocation itemId) {
+    public boolean removeOverride(Identifier itemId) {
         if (itemId == null) {
             return false;
         }
@@ -105,8 +104,8 @@ public final class ItemCategoryMappingService {
         if (!snap.overrides().containsKey(itemId) && !snap.blocked().contains(itemId)) {
             return false;
         }
-        Map<ResourceLocation, String> newOverrides = new LinkedHashMap<>(snap.overrides());
-        Set<ResourceLocation> newBlocked = new LinkedHashSet<>(snap.blocked());
+        Map<Identifier, String> newOverrides = new LinkedHashMap<>(snap.overrides());
+        Set<Identifier> newBlocked = new LinkedHashSet<>(snap.blocked());
         newOverrides.remove(itemId);
         newBlocked.remove(itemId);
         overrideSnapshot = new OverrideSnapshot(newOverrides, newBlocked);
@@ -115,14 +114,14 @@ public final class ItemCategoryMappingService {
         return true;
     }
 
-    public void clearMapping(ResourceLocation itemId) {
+    public void clearMapping(Identifier itemId) {
         if (itemId == null) {
             return;
         }
 
         OverrideSnapshot snap = overrideSnapshot;
-        Map<ResourceLocation, String> newOverrides = new LinkedHashMap<>(snap.overrides());
-        Set<ResourceLocation> newBlocked = new LinkedHashSet<>(snap.blocked());
+        Map<Identifier, String> newOverrides = new LinkedHashMap<>(snap.overrides());
+        Set<Identifier> newBlocked = new LinkedHashSet<>(snap.blocked());
         newOverrides.remove(itemId);
         newBlocked.add(itemId);
         overrideSnapshot = new OverrideSnapshot(newOverrides, newBlocked);
@@ -130,7 +129,7 @@ public final class ItemCategoryMappingService {
         notifyChanged();
     }
 
-    public boolean isMappedToCategory(ResourceLocation itemId, String categoryId) {
+    public boolean isMappedToCategory(Identifier itemId, String categoryId) {
         if (itemId == null || categoryId == null) {
             return false;
         }
@@ -153,7 +152,7 @@ public final class ItemCategoryMappingService {
         return Objects.equals(normalizedCategoryId, defaultCategory);
     }
 
-    public void toggleCategoryMembership(ResourceLocation itemId, String categoryId) {
+    public void toggleCategoryMembership(Identifier itemId, String categoryId) {
         if (isMappedToCategory(itemId, categoryId)) {
             clearMapping(itemId);
             return;
@@ -168,7 +167,7 @@ public final class ItemCategoryMappingService {
         }
 
         OverrideSnapshot snap = overrideSnapshot;
-        Map<ResourceLocation, String> newOverrides = new LinkedHashMap<>(snap.overrides());
+        Map<Identifier, String> newOverrides = new LinkedHashMap<>(snap.overrides());
         boolean changed = newOverrides.entrySet().removeIf(entry -> normalizedCategoryId.equals(entry.getValue()));
         if (changed) {
             overrideSnapshot = new OverrideSnapshot(newOverrides, new LinkedHashSet<>(snap.blocked()));
@@ -177,7 +176,7 @@ public final class ItemCategoryMappingService {
         }
     }
 
-    public void applyScopedOverrides(Map<ResourceLocation, String> overrides, Set<ResourceLocation> blocked) {
+    public void applyScopedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
         overrideSnapshot = new OverrideSnapshot(
                 new LinkedHashMap<>(Objects.requireNonNull(overrides, "overrides")),
                 new LinkedHashSet<>(Objects.requireNonNull(blocked, "blocked"))
@@ -185,11 +184,11 @@ public final class ItemCategoryMappingService {
         rebuildMergedMappings();
     }
 
-    public Map<ResourceLocation, String> snapshotOverrides() {
+    public Map<Identifier, String> snapshotOverrides() {
         return immutableMapCopy(overrideSnapshot.overrides());
     }
 
-    public Set<ResourceLocation> snapshotBlockedMappings() {
+    public Set<Identifier> snapshotBlockedMappings() {
         return immutableSetCopy(overrideSnapshot.blocked());
     }
 
@@ -210,8 +209,8 @@ public final class ItemCategoryMappingService {
 
     private void rebuildMergedMappings() {
         OverrideSnapshot snap = overrideSnapshot;
-        Map<ResourceLocation, String> defaults = new LinkedHashMap<>(defaultMappings);
-        for (ResourceLocation blockedItemId : snap.blocked()) {
+        Map<Identifier, String> defaults = new LinkedHashMap<>(defaultMappings);
+        for (Identifier blockedItemId : snap.blocked()) {
             defaults.remove(blockedItemId);
         }
         defaults.putAll(snap.overrides());

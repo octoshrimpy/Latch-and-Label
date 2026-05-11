@@ -1,6 +1,6 @@
 package com.latchandlabel.client.model;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Objects;
 
@@ -12,7 +12,7 @@ public record Category(
         String id,
         String name,
         int color,
-        ResourceLocation iconItemId,
+        Identifier iconItemId,
         int order,
         boolean visible
 ) {

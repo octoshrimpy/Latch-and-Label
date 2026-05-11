@@ -1,7 +1,7 @@
 package com.latchandlabel.client.store;
 
 import com.latchandlabel.client.model.Category;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -45,7 +45,7 @@ public final class CategoryStore {
     }
 
     /** Updates the display details of an existing category. Returns false if nothing changed. */
-    public synchronized boolean updateCategoryDetails(String categoryId, String name, int color, ResourceLocation iconItemId) {
+    public synchronized boolean updateCategoryDetails(String categoryId, String name, int color, Identifier iconItemId) {
         Objects.requireNonNull(categoryId, "categoryId");
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(iconItemId, "iconItemId");
@@ -84,7 +84,7 @@ public final class CategoryStore {
     }
 
     /** Creates a new category with a unique ID derived from the name and appends it to the store. */
-    public synchronized Category createCategory(String preferredName, int color, ResourceLocation iconItemId) {
+    public synchronized Category createCategory(String preferredName, int color, Identifier iconItemId) {
         Objects.requireNonNull(preferredName, "preferredName");
         Objects.requireNonNull(iconItemId, "iconItemId");
 

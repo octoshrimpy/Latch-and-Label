@@ -29,7 +29,7 @@ public final class StorageTagResolver {
         }
 
         Level world = client.level;
-        if (!key.dimensionId().equals(world.dimension().location())) {
+        if (!key.dimensionId().equals(world.dimension().identifier())) {
             return tagStore.getTag(key);
         }
 

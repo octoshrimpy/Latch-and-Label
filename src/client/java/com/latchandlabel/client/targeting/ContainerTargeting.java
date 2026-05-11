@@ -20,7 +20,7 @@ public final class ContainerTargeting {
             return Optional.empty();
         }
 
-        HitResult hitResult = client.crosshairTarget;
+        HitResult hitResult = client.hitResult;
         if (!(hitResult instanceof BlockHitResult blockHitResult) || hitResult.getType() != HitResult.Type.BLOCK) {
             return Optional.empty();
         }

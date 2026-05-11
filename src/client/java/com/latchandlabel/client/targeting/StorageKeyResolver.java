@@ -5,7 +5,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.properties.ChestType;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -32,15 +32,15 @@ public final class StorageKeyResolver {
             return Optional.empty();
         }
 
-        BlockPos resolvedPos = resolveCanonicalPos(world, pos).orElse(pos).toImmutable();
-        return Optional.of(new ChestKey(world.dimension().location(), resolvedPos));
+        BlockPos resolvedPos = resolveCanonicalPos(world, pos).orElse(pos).immutable();
+        return Optional.of(new ChestKey(world.dimension().identifier(), resolvedPos));
     }
 
     public static ChestKey normalizeForWorld(Level world, ChestKey key) {
         if (world == null || key == null) {
             return key;
         }
-        if (!key.dimensionId().equals(world.dimension().location())) {
+        if (!key.dimensionId().equals(world.dimension().identifier())) {
             return key;
         }
 
@@ -52,7 +52,7 @@ public final class StorageKeyResolver {
             return Set.of();
         }
 
-        ResourceLocation dimensionId = world.dimension().location();
+        Identifier dimensionId = world.dimension().identifier();
         if (!dimensionId.equals(key.dimensionId())) {
             return Set.of(key);
         }
@@ -66,11 +66,11 @@ public final class StorageKeyResolver {
             return Set.copyOf(keys);
         }
 
-        ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
         if (chestType == ChestType.SINGLE) {
-            Direction facing = state.get(ChestBlock.FACING);
-            addPotentialStaleCounterpart(world, dimensionId, keys, key.pos().offset(facing.rotateYClockwise()));
-            addPotentialStaleCounterpart(world, dimensionId, keys, key.pos().offset(facing.rotateYCounterclockwise()));
+            Direction facing = state.getValue(ChestBlock.FACING);
+            addPotentialStaleCounterpart(world, dimensionId, keys, key.pos().relative(facing.getClockWise()));
+            addPotentialStaleCounterpart(world, dimensionId, keys, key.pos().relative(facing.getCounterClockWise()));
             keys.add(normalizeForWorld(world, key));
             return Set.copyOf(keys);
         }
@@ -90,11 +90,11 @@ public final class StorageKeyResolver {
         return equivalentKeys(world, singleChestKey).contains(candidateAlias);
     }
 
-    private static void addPotentialStaleCounterpart(Level world, ResourceLocation dimensionId, Set<ChestKey> keys, BlockPos neighborPos) {
+    private static void addPotentialStaleCounterpart(Level world, Identifier dimensionId, Set<ChestKey> keys, BlockPos neighborPos) {
         if (TrackableStorage.isTrackableStorage(world.getBlockEntity(neighborPos))) {
             return;
         }
-        keys.add(new ChestKey(dimensionId, neighborPos.toImmutable()));
+        keys.add(new ChestKey(dimensionId, neighborPos.immutable()));
     }
 
     private static Optional<BlockPos> resolveCanonicalPos(Level world, BlockPos pos) {
@@ -103,7 +103,7 @@ public final class StorageKeyResolver {
             return Optional.empty();
         }
 
-        ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
         if (chestType == ChestType.SINGLE) {
             return Optional.of(pos);
         }
@@ -116,28 +116,28 @@ public final class StorageKeyResolver {
             return Optional.empty();
         }
 
-        ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
         if (chestType == ChestType.SINGLE) {
             return Optional.empty();
         }
 
-        Direction facing = state.get(ChestBlock.FACING);
+        Direction facing = state.getValue(ChestBlock.FACING);
         Direction partnerDirection = chestType == ChestType.LEFT
-                ? facing.rotateYClockwise()
-                : facing.rotateYCounterclockwise();
-        BlockPos partnerPos = pos.offset(partnerDirection);
+                ? facing.getClockWise()
+                : facing.getCounterClockWise();
+        BlockPos partnerPos = pos.relative(partnerDirection);
         BlockState partnerState = world.getBlockState(partnerPos);
         if (!(partnerState.getBlock() instanceof ChestBlock)) {
             return Optional.empty();
         }
-        if (partnerState.get(ChestBlock.CHEST_TYPE) == ChestType.SINGLE) {
+        if (partnerState.getValue(ChestBlock.TYPE) == ChestType.SINGLE) {
             return Optional.empty();
         }
-        if (partnerState.get(ChestBlock.FACING) != facing) {
+        if (partnerState.getValue(ChestBlock.FACING) != facing) {
             return Optional.empty();
         }
 
-        return Optional.of(partnerPos.toImmutable());
+        return Optional.of(partnerPos.immutable());
     }
 
     private static BlockPos lowerPos(BlockPos a, BlockPos b) {

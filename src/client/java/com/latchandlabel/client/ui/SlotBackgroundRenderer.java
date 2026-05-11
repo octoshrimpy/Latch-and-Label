@@ -3,7 +3,7 @@ package com.latchandlabel.client.ui;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.Slot;
@@ -16,7 +16,7 @@ public final class SlotBackgroundRenderer {
     private SlotBackgroundRenderer() {
     }
 
-    public static void renderSlot(AbstractContainerScreen<?> handledScreen, GuiGraphics context, Slot slot) {
+    public static void extractSlot(AbstractContainerScreen<?> handledScreen, GuiGraphicsExtractor context, Slot slot) {
         ItemStack stack = slot.getItem();
         if (stack.isEmpty()) {
             return;

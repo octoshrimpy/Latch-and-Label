@@ -4,9 +4,9 @@ import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.GuiGraphics;
-// TODO: verify Click package after ./gradlew genSources — was net.minecraft.client.gui.Click in 1.21.11
-import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+// TODO: verify MouseButtonEvent package after ./gradlew genSources — was net.minecraft.client.gui.MouseButtonEvent in 1.21.11
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.world.item.ItemStack;
@@ -14,7 +14,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -64,16 +64,16 @@ public final class CategoryItemMappingScreen extends Screen {
     private final Screen parent;
     private final String categoryId;
     private Category fallbackCategory;
-    private final List<ResourceLocation> filteredItemIds = new ArrayList<>();
-    private final Map<ResourceLocation, List<String>> itemTagSearchCache = new HashMap<>();
-    private final ResourceLocation airItemId = BuiltInRegistries.ITEM.getKey(Items.AIR).location();
+    private final List<Identifier> filteredItemIds = new ArrayList<>();
+    private final Map<Identifier, List<String>> itemTagSearchCache = new HashMap<>();
+    private final Identifier airItemId = BuiltInRegistries.ITEM.getKey(Items.AIR);
     private EditBox nameField;
     private EditBox searchField;
     private Button categoryFilterButton;
     private Component headerTitle;
     private int pageIndex;
     private int selectedColor;
-    private ResourceLocation selectedIconItemId;
+    private Identifier selectedIconItemId;
     private boolean colorPickerOpen;
     private boolean deleteConfirmOpen;
     private boolean categoryDeleted;
@@ -103,16 +103,16 @@ public final class CategoryItemMappingScreen extends Screen {
 
         int nameFieldLeft = panelLeft + 10 + ICON_BUTTON_SIZE + ICON_COLOR_GAP + COLOR_BUTTON_SIZE + 6;
         int nameFieldWidth = Math.max(20, PANEL_WIDTH - 20 - ICON_BUTTON_SIZE - ICON_COLOR_GAP - COLOR_BUTTON_SIZE - 6);
-        nameField = new EditBox(textRenderer, nameFieldLeft, panelTop + 22, nameFieldWidth, 18, .Component.empty());
-        nameField.setText(active.name());
+        nameField = new EditBox(font, nameFieldLeft, panelTop + 22, nameFieldWidth, 18, Component.empty());
+        nameField.setValue(active.name());
         nameField.setMaxLength(48);
-        nameField.setChangedListener(this::onNameChanged);
-        addDrawableChild(nameField);
+        nameField.setResponder(this::onNameChanged);
+        addRenderableWidget(nameField);
 
-        searchField = new EditBox(textRenderer, panelLeft + 10, panelTop + 46, PANEL_WIDTH - 20, 18, .Component.empty());
-        searchField.setChangedListener(value -> refilter());
+        searchField = new EditBox(font, panelLeft + 10, panelTop + 46, PANEL_WIDTH - 20, 18, Component.empty());
+        searchField.setResponder(value -> refilter());
         searchField.setMaxLength(80);
-        addDrawableChild(searchField);
+        addRenderableWidget(searchField);
         setInitialFocus(searchField);
         searchField.setFocused(true);
 
@@ -120,57 +120,57 @@ public final class CategoryItemMappingScreen extends Screen {
         int gridWidth = GRID_COLUMNS * SLOT_SIZE;
         int gridLeft = panelLeft + (PANEL_WIDTH - gridWidth) / 2;
         int filterButtonLeft = gridLeft + gridWidth + 8;
-        categoryFilterButton = addDrawableChild(Button.builder(categoryFilterText(), button -> {
+        categoryFilterButton = addRenderableWidget(Button.builder(categoryFilterText(), button -> {
                     showOnlyCategoryItems = !showOnlyCategoryItems;
                     refilter();
                     refreshCategoryFilterButton();
                 })
-                .dimensions(filterButtonLeft, gridTop, 88, 18)
+                .pos(filterButtonLeft, gridTop).size(88, 18)
                 .build());
 
-        addDrawableChild(Button.builder(Component.translatable("gui.back"), button -> close())
-                .dimensions(panelLeft + 10, panelTop + PANEL_HEIGHT - 24, 60, 16)
+        addRenderableWidget(Button.builder(Component.translatable("gui.back"), button -> onClose())
+                .pos(panelLeft + 10, panelTop + PANEL_HEIGHT - 24).size(60, 16)
                 .build());
 
-        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.category_items.delete"), button -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.latchlabel.category_items.delete"), button -> {
                     colorPickerOpen = false;
                     deleteConfirmOpen = true;
                 })
-                .dimensions(panelLeft + 76, panelTop + PANEL_HEIGHT - 24, 70, 16)
+                .pos(panelLeft + 76, panelTop + PANEL_HEIGHT - 24).size(70, 16)
                 .build());
 
-        addDrawableChild(Button.builder(Component.literal("<"), button -> {
+        addRenderableWidget(Button.builder(Component.literal("<"), button -> {
                     if (pageIndex > 0) {
                         pageIndex--;
                     }
                 })
-                .dimensions(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24, 20, 16)
+                .pos(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24).size(20, 16)
                 .build());
 
-        addDrawableChild(Button.builder(Component.literal(">"), button -> {
+        addRenderableWidget(Button.builder(Component.literal(">"), button -> {
                     int maxPage = maxPageIndex();
                     if (pageIndex < maxPage) {
                         pageIndex++;
                     }
                 })
-                .dimensions(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24, 20, 16)
+                .pos(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24).size(20, 16)
                 .build());
 
         refilter();
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         if (!categoryDeleted) {
             commitCategoryEdits();
         }
-        if (client != null) {
-            client.setScreen(parent);
+        if (minecraft != null) {
+            minecraft.gui.setScreen(parent);
         }
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
@@ -194,29 +194,29 @@ public final class CategoryItemMappingScreen extends Screen {
                 && mouseY <= colorButtonTop + COLOR_BUTTON_SIZE;
 
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
-        context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
-        context.drawString(textRenderer, headerTitle, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
+        GuiUtils.drawBorder(context, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
+        context.text(font, headerTitle, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
         context.fill(iconButtonLeft, iconButtonTop, iconButtonLeft + ICON_BUTTON_SIZE, iconButtonTop + ICON_BUTTON_SIZE, 0xCC2A2A2A);
-        context.drawStrokedRectangle(iconButtonLeft, iconButtonTop, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, iconHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
+        GuiUtils.drawBorder(context, iconButtonLeft, iconButtonTop, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, iconHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
         if (selectedIconItemId != null && BuiltInRegistries.ITEM.containsKey(selectedIconItemId)) {
-            context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(selectedIconItemId)), iconButtonLeft + 1, iconButtonTop + 1);
+            context.item(new ItemStack(BuiltInRegistries.ITEM.getValue(selectedIconItemId)), iconButtonLeft + 1, iconButtonTop + 1);
         }
         context.fill(colorButtonLeft, colorButtonTop, colorButtonLeft + COLOR_BUTTON_SIZE, colorButtonTop + COLOR_BUTTON_SIZE, colorValue);
-        context.drawStrokedRectangle(colorButtonLeft, colorButtonTop, COLOR_BUTTON_SIZE, COLOR_BUTTON_SIZE, colorHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
+        GuiUtils.drawBorder(context, colorButtonLeft, colorButtonTop, COLOR_BUTTON_SIZE, COLOR_BUTTON_SIZE, colorHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
 
         boolean suppressUnderlyingHover = deleteConfirmOpen
                 || isWithinColorPicker(mouseX, mouseY, colorButtonLeft, colorPickerTop);
         int interactionMouseX = suppressUnderlyingHover ? Integer.MIN_VALUE : mouseX;
         int interactionMouseY = suppressUnderlyingHover ? Integer.MIN_VALUE : mouseY;
-        super.render(context, interactionMouseX, interactionMouseY, delta);
+        super.extractRenderState(context, interactionMouseX, interactionMouseY, delta);
 
-        ResourceLocation hoveredItemId = null;
+        Identifier hoveredItemId = null;
         if (!deleteConfirmOpen) {
             int start = pageIndex * PAGE_SIZE;
             int end = Math.min(filteredItemIds.size(), start + PAGE_SIZE);
             for (int i = start; i < end; i++) {
                 int slotIndex = i - start;
-                ResourceLocation itemId = filteredItemIds.get(i);
+                Identifier itemId = filteredItemIds.get(i);
                 if (drawSlot(context, gridLeft, gridTop, slotIndex, itemId, interactionMouseX, interactionMouseY)) {
                     hoveredItemId = itemId;
                 }
@@ -225,9 +225,9 @@ public final class CategoryItemMappingScreen extends Screen {
 
         List<Component> hoveredTooltipLines = null;
         if (!deleteConfirmOpen && hoveredItemId != null) {
-            ItemStack hoveredStack = new ItemStack(BuiltInRegistries.ITEM.get(hoveredItemId));
+            ItemStack hoveredStack = new ItemStack(BuiltInRegistries.ITEM.getValue(hoveredItemId));
             hoveredTooltipLines = new ArrayList<>();
-            hoveredTooltipLines.add(hoveredStack.getName());
+            hoveredTooltipLines.add(hoveredStack.getDisplayName());
 
             boolean mappedToCurrent = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(hoveredItemId, categoryId);
             if (!mappedToCurrent && ClientInputHandler.isShiftDown()) {
@@ -253,12 +253,12 @@ public final class CategoryItemMappingScreen extends Screen {
         }
 
         if (hoveredTooltipLines != null) {
-            context.drawTooltip(textRenderer, hoveredTooltipLines, Optional.empty(), mouseX, mouseY);
+            context.setTooltipForNextFrame(font, hoveredTooltipLines, Optional.empty(), mouseX, mouseY);
         }
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean consumed) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean consumed) {
         if (deleteConfirmOpen) {
             return handleDeleteConfirmClick(click);
         }
@@ -321,23 +321,23 @@ public final class CategoryItemMappingScreen extends Screen {
         }
 
         Category active = activeCategory();
-        ResourceLocation itemId = filteredItemIds.get(itemIndex);
+        Identifier itemId = filteredItemIds.get(itemIndex);
         LatchLabelClientState.itemCategoryMappingService().toggleCategoryMembership(itemId, categoryId);
         if (showOnlyCategoryItems) {
             refilter();
         }
-        if (client != null && client.inGameHud != null) {
+        if (minecraft != null && minecraft.player != null) {
             boolean on = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(itemId, categoryId);
             Component message = on
                     ? Component.translatable("latchlabel.mapping.added", itemId.toString(), active.name())
                     : Component.translatable("latchlabel.mapping.removed", itemId.toString());
-            client.inGameHud.setOverlayMessage(message, false);
+            minecraft.player.sendOverlayMessage(message);
         }
         return true;
     }
 
     @Override
-    public boolean keyPressed(net.minecraft.client.input.KeyInput keyInput) {
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent keyInput) {
         if (deleteConfirmOpen) {
             if (keyInput.key() == GLFW.GLFW_KEY_ESCAPE) {
                 deleteConfirmOpen = false;
@@ -360,14 +360,14 @@ public final class CategoryItemMappingScreen extends Screen {
             return true;
         }
         if (keyInput.key() == GLFW.GLFW_KEY_ESCAPE) {
-            close();
+            onClose();
             return true;
         }
         return super.keyPressed(keyInput);
     }
 
     @Override
-    public boolean charTyped(net.minecraft.client.input.CharInput charInput) {
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent charInput) {
         if (deleteConfirmOpen) {
             return true;
         }
@@ -378,12 +378,12 @@ public final class CategoryItemMappingScreen extends Screen {
     }
 
     private void refilter() {
-        String query = searchField == null ? "" : searchField.getText().toLowerCase(Locale.ROOT).trim();
+        String query = searchField == null ? "" : searchField.getValue().toLowerCase(Locale.ROOT).trim();
         boolean tagQuery = query.startsWith("#");
         String normalizedTagQuery = tagQuery ? query.substring(1) : query;
 
         filteredItemIds.clear();
-        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+        for (Identifier itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null || itemId.equals(airItemId)) {
                 continue;
             }
@@ -396,11 +396,11 @@ public final class CategoryItemMappingScreen extends Screen {
             filteredItemIds.add(itemId);
         }
 
-        filteredItemIds.sort(Comparator.comparing(ResourceLocation::toString));
+        filteredItemIds.sort(Comparator.comparing(Identifier::toString));
         pageIndex = 0;
     }
 
-    private boolean matchesSearchQuery(ResourceLocation itemId, String query, String normalizedTagQuery, boolean tagQuery) {
+    private boolean matchesSearchQuery(Identifier itemId, String query, String normalizedTagQuery, boolean tagQuery) {
         if (query.isEmpty()) {
             return true;
         }
@@ -417,21 +417,21 @@ public final class CategoryItemMappingScreen extends Screen {
         return false;
     }
 
-    private List<String> itemTagIds(ResourceLocation itemId) {
+    private List<String> itemTagIds(Identifier itemId) {
         return itemTagSearchCache.computeIfAbsent(itemId, id -> {
             if (!BuiltInRegistries.ITEM.containsKey(id)) {
                 return List.of();
             }
-            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
-            return stack.getRegistryEntry()
-                    .streamTags()
-                    .map(tagKey -> tagKey.id().toString().toLowerCase(Locale.ROOT))
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.getValue(id));
+            return stack.typeHolder()
+                    .tags()
+                    .map(tagKey -> tagKey.location().toString().toLowerCase(Locale.ROOT))
                     .sorted()
                     .toList();
         });
     }
 
-    private boolean drawSlot(GuiGraphics context, int gridLeft, int gridTop, int slotIndex, ResourceLocation itemId, int mouseX, int mouseY) {
+    private boolean drawSlot(GuiGraphicsExtractor context, int gridLeft, int gridTop, int slotIndex, Identifier itemId, int mouseX, int mouseY) {
         Category active = activeCategory();
         int col = slotIndex % GRID_COLUMNS;
         int row = slotIndex / GRID_COLUMNS;
@@ -447,9 +447,9 @@ public final class CategoryItemMappingScreen extends Screen {
             baseBackground = mapped ? (0xEE000000 | (active.color() & 0x00FFFFFF)) : 0xCC3A3A3A;
         }
         context.fill(x, y, right, bottom, baseBackground);
-        context.drawStrokedRectangle(x, y, SLOT_SIZE, SLOT_SIZE, mapped ? 0xFFFFFFFF : 0xFF5A5A5A);
+        GuiUtils.drawBorder(context, x, y, SLOT_SIZE, SLOT_SIZE, mapped ? 0xFFFFFFFF : 0xFF5A5A5A);
 
-        context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(itemId)), x + 1, y + 1);
+        context.item(new ItemStack(BuiltInRegistries.ITEM.getValue(itemId)), x + 1, y + 1);
         if (!mapped) {
             context.fill(x + 1, y + 1, right - 1, bottom - 1, 0x40000000);
         }
@@ -480,12 +480,12 @@ public final class CategoryItemMappingScreen extends Screen {
         return row * GRID_COLUMNS + col;
     }
 
-    private void drawColorPicker(GuiGraphics context, int left, int top, int mouseX, int mouseY) {
+    private void drawColorPicker(GuiGraphicsExtractor context, int left, int top, int mouseX, int mouseY) {
         int rows = (int) Math.ceil((double) COLOR_PALETTE.length / COLOR_SWATCH_COLUMNS);
         int pickerWidth = (COLOR_SWATCH_COLUMNS * COLOR_SWATCH_SIZE) + ((COLOR_SWATCH_COLUMNS - 1) * COLOR_SWATCH_GAP) + 8;
         int pickerHeight = (rows * COLOR_SWATCH_SIZE) + ((rows - 1) * COLOR_SWATCH_GAP) + 8;
         context.fill(left, top, left + pickerWidth, top + pickerHeight, 0xFF101010);
-        context.drawStrokedRectangle(left, top, pickerWidth, pickerHeight, 0xFF4A4A4A);
+        GuiUtils.drawBorder(context, left, top, pickerWidth, pickerHeight, 0xFF4A4A4A);
 
         for (int i = 0; i < COLOR_PALETTE.length; i++) {
             int row = i / COLOR_SWATCH_COLUMNS;
@@ -498,7 +498,7 @@ public final class CategoryItemMappingScreen extends Screen {
 
             context.fill(swatchLeft, swatchTop, swatchLeft + COLOR_SWATCH_SIZE, swatchTop + COLOR_SWATCH_SIZE, swatchColor);
             int border = selected ? 0xFFFFFFFF : (hovered ? 0xFFBDBDBD : 0xFF5A5A5A);
-            context.drawStrokedRectangle(swatchLeft, swatchTop, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE, border);
+            GuiUtils.drawBorder(context, swatchLeft, swatchTop, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE, border);
         }
     }
 
@@ -537,7 +537,7 @@ public final class CategoryItemMappingScreen extends Screen {
     }
 
     private void commitCategoryEdits() {
-        String rawName = nameField == null ? activeCategory().name() : nameField.getText();
+        String rawName = nameField == null ? activeCategory().name() : nameField.getValue();
         String normalizedName = rawName == null ? "" : rawName.trim();
         if (normalizedName.isEmpty()) {
             normalizedName = activeCategory().name();
@@ -545,7 +545,7 @@ public final class CategoryItemMappingScreen extends Screen {
 
         int normalizedColor = selectedColor & 0x00FFFFFF;
         selectedColor = normalizedColor;
-        ResourceLocation iconItemId = selectedIconItemId;
+        Identifier iconItemId = selectedIconItemId;
         if (iconItemId == null || !BuiltInRegistries.ITEM.containsKey(iconItemId)) {
             iconItemId = activeCategory().iconItemId();
         }
@@ -591,11 +591,11 @@ public final class CategoryItemMappingScreen extends Screen {
 
     private void openIconPicker() {
         colorPickerOpen = false;
-        if (client == null) {
+        if (minecraft == null) {
             return;
         }
 
-        client.setScreen(new CategoryIconPickerScreen(
+        minecraft.gui.setScreen(new CategoryIconPickerScreen(
                 this,
                 activeCategory().name(),
                 selectedIconItemId,
@@ -606,7 +606,7 @@ public final class CategoryItemMappingScreen extends Screen {
         ));
     }
 
-    private boolean handleDeleteConfirmClick(Click click) {
+    private boolean handleDeleteConfirmClick(MouseButtonEvent click) {
         if (click.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return true;
         }
@@ -634,8 +634,8 @@ public final class CategoryItemMappingScreen extends Screen {
         return true;
     }
 
-    private void drawDeleteConfirmDialog(GuiGraphics context, int mouseX, int mouseY) {
-        context.getMatrices().pushMatrix();
+    private void drawDeleteConfirmDialog(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        context.pose().pushMatrix();
         context.fill(0, 0, width, height, 0xA0000000);
 
         int boxLeft = (width - DELETE_CONFIRM_WIDTH) / 2;
@@ -643,10 +643,10 @@ public final class CategoryItemMappingScreen extends Screen {
         int boxRight = boxLeft + DELETE_CONFIRM_WIDTH;
         int boxBottom = boxTop + DELETE_CONFIRM_HEIGHT;
         context.fill(boxLeft, boxTop, boxRight, boxBottom, 0xFF101010);
-        context.drawStrokedRectangle(boxLeft, boxTop, DELETE_CONFIRM_WIDTH, DELETE_CONFIRM_HEIGHT, 0xFF5A5A5A);
+        GuiUtils.drawBorder(context, boxLeft, boxTop, DELETE_CONFIRM_WIDTH, DELETE_CONFIRM_HEIGHT, 0xFF5A5A5A);
 
         Component confirmText = Component.translatable("screen.latchlabel.category_items.delete_confirm", activeCategory().name());
-        context.drawString(textRenderer, confirmText, boxLeft + 10, boxTop + 14, 0xFFFFFFFF, true);
+        context.text(font, confirmText, boxLeft + 10, boxTop + 14, 0xFFFFFFFF, true);
 
         int buttonY = boxTop + DELETE_CONFIRM_HEIGHT - 26;
         int cancelX = boxLeft + DELETE_CONFIRM_WIDTH - DELETE_CONFIRM_BUTTON_WIDTH - 10;
@@ -655,13 +655,13 @@ public final class CategoryItemMappingScreen extends Screen {
         boolean cancelHovered = isWithin(mouseX, mouseY, cancelX, buttonY, cancelX + DELETE_CONFIRM_BUTTON_WIDTH, buttonY + DELETE_CONFIRM_BUTTON_HEIGHT);
 
         context.fill(deleteX, buttonY, deleteX + DELETE_CONFIRM_BUTTON_WIDTH, buttonY + DELETE_CONFIRM_BUTTON_HEIGHT, deleteHovered ? 0xFFB02E26 : 0xFF8E2620);
-        context.drawStrokedRectangle(deleteX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer, Component.translatable("screen.latchlabel.category_items.delete"), deleteX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
+        GuiUtils.drawBorder(context, deleteX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
+        context.centeredText(font, Component.translatable("screen.latchlabel.category_items.delete"), deleteX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
 
         context.fill(cancelX, buttonY, cancelX + DELETE_CONFIRM_BUTTON_WIDTH, buttonY + DELETE_CONFIRM_BUTTON_HEIGHT, cancelHovered ? 0xFF4A4A4A : 0xFF353535);
-        context.drawStrokedRectangle(cancelX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer, Component.translatable("gui.cancel"), cancelX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
-        context.getMatrices().popMatrix();
+        GuiUtils.drawBorder(context, cancelX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
+        context.centeredText(font, Component.translatable("gui.cancel"), cancelX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
+        context.pose().popMatrix();
     }
 
     private void deleteCategoryAndClose() {
@@ -673,14 +673,12 @@ public final class CategoryItemMappingScreen extends Screen {
         }
 
         categoryDeleted = true;
-        if (client != null) {
-            if (client.inGameHud != null) {
-            client.inGameHud.setOverlayMessage(
-                    Component.translatable("latchlabel.category.deleted", deletedCategoryName),
-                    false
-            );
+        if (minecraft != null) {
+            if (minecraft.player != null) {
+            minecraft.player.sendOverlayMessage(
+                    Component.translatable("latchlabel.category.deleted", deletedCategoryName));
             }
-            client.setScreen(parent);
+            minecraft.gui.setScreen(parent);
         }
     }
 

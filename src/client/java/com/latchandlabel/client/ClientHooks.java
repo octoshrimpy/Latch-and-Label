@@ -21,7 +21,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 
 public final class ClientHooks {
@@ -74,7 +74,7 @@ public final class ClientHooks {
             ItemCategoryTooltipHandler.appendCategoryLine(stack, lines);
         });
 
-        WorldRenderEvents.AFTER_ENTITIES.register(context -> {
+        LevelRenderEvents.COLLECT_SUBMITS.register(context -> {
             InspectModeRenderer.render(context);
             FindHighlightRenderer.render(context);
         });

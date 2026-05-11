@@ -7,11 +7,9 @@ import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.StorageRenderShapeResolver;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.MultiBufferSource;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -53,22 +51,19 @@ public final class FindHighlightRenderer {
     private static final float FOCUS_G = 0.85f;
     private static final float FOCUS_B = 0.20f;
 
-    // reused per render call; safe since FindHighlightRenderer.render is render-thread-only
     private static final float[] RGB_SCRATCH = new float[3];
 
     private FindHighlightRenderer() {
     }
 
-    public static void render(WorldRenderContext context) {
+    public static void render(LevelRenderContext context) {
         List<FindResultState.ActiveFindResult> activeResults = FindResultState.getActiveResults();
         if (activeResults.isEmpty()) {
             return;
         }
 
-        PoseStack matrices = context.matrices();
-        MultiBufferSource consumers = context.consumers();
         Minecraft client = Minecraft.getInstance();
-        if (matrices == null || consumers == null || client == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
+        if (client == null || client.gameRenderer == null || client.gameRenderer.mainCamera() == null) {
             return;
         }
         Level world = client.level;
@@ -76,15 +71,11 @@ public final class FindHighlightRenderer {
             return;
         }
 
-        Vec3 cameraPos = client.gameRenderer.getCamera().getCameraPos();
+        Vec3 cameraPos = client.gameRenderer.mainCamera().position();
         double nearDistanceSq = LOD_NEAR_DISTANCE * LOD_NEAR_DISTANCE;
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
         long frameParity = world.getGameTime() & 1L;
-        Frustum frustum = context.worldRenderer().getCapturedFrustum();
-        VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
-
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+        Frustum frustum = context.levelState().cameraRenderState.cullFrustum;
 
         double pulse = 0.5 + (0.5 * Math.sin((System.currentTimeMillis() / 1000.0) * PULSE_SPEED_RADIANS));
         double pulseScale = PULSE_MIN_SCALE + ((PULSE_MAX_SCALE - PULSE_MIN_SCALE) * pulse);
@@ -102,7 +93,7 @@ public final class FindHighlightRenderer {
                 continue;
             }
             AABB box = renderBox.get();
-            if (frustum != null && !frustum.isVisible(box.expand(FRUSTUM_MARGIN))) {
+            if (frustum != null && !frustum.isVisible(box.inflate(FRUSTUM_MARGIN))) {
                 continue;
             }
 
@@ -138,50 +129,69 @@ public final class FindHighlightRenderer {
             candidates.add(new RenderCandidate(key, box, distanceSq, focused, shouldPulse, isPossible, r, g, b));
         }
 
-        candidates.sort(Comparator.comparingDouble(RenderCandidate::distanceSq));
-        int rendered = 0;
-        for (RenderCandidate candidate : candidates) {
-            if (rendered >= MAX_RESULTS_PER_FRAME) {
-                break;
-            }
-
-            AABB box = candidate.box();
-            float r = candidate.r();
-            float g = candidate.g();
-            float b = candidate.b();
-            double distanceSq = candidate.distanceSq();
-
-            float alpha;
-            double thickness;
-            if (candidate.isPossible()) {
-                thickness = THICK_FAR;
-                alpha = POSSIBLE_ALPHA;
-            } else {
-                double baseThickness = distanceSq <= nearDistanceSq
-                        ? THICK_NEAR
-                        : (distanceSq <= midDistanceSq ? THICK_MID : THICK_FAR);
-                thickness = candidate.shouldPulse() ? baseThickness * pulseScale : baseThickness;
-                alpha = MATCH_ALPHA;
-            }
-            ThickOutlineRenderer.drawThickOutline(matrices, fillConsumer, box.expand(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, alpha);
-
-            if (candidate.focused() && !candidate.isPossible()) {
-                double focusThickness = candidate.shouldPulse() ? FOCUS_THICK * pulseScale : FOCUS_THICK;
-                ThickOutlineRenderer.drawThickOutline(
-                        matrices,
-                        fillConsumer,
-                        box.expand(OUTLINE_BASE_EXPAND + 0.004),
-                        (float) focusThickness,
-                        FOCUS_R,
-                        FOCUS_G,
-                        FOCUS_B,
-                        FOCUS_ALPHA
-                );
-            }
-            rendered++;
+        if (candidates.isEmpty()) {
+            return;
         }
 
-        matrices.pop();
+        candidates.sort(Comparator.comparingDouble(RenderCandidate::distanceSq));
+
+        final double camX = cameraPos.x;
+        final double camY = cameraPos.y;
+        final double camZ = cameraPos.z;
+        final double finalPulseScale = pulseScale;
+        final List<RenderCandidate> finalCandidates = candidates;
+        final double finalNearSq = nearDistanceSq;
+        final double finalMidSq = midDistanceSq;
+
+        PoseStack matrices = context.poseStack();
+        matrices.pushPose();
+        matrices.translate(-camX, -camY, -camZ);
+
+        context.submitNodeCollector().submitCustomGeometry(matrices, RenderLayerCompat.debugFilledBox(), (pose, consumer) -> {
+            int rendered = 0;
+            for (RenderCandidate candidate : finalCandidates) {
+                if (rendered >= MAX_RESULTS_PER_FRAME) {
+                    break;
+                }
+
+                AABB box = candidate.box();
+                float r = candidate.r();
+                float g = candidate.g();
+                float b = candidate.b();
+                double distanceSq = candidate.distanceSq();
+
+                float alpha;
+                double thickness;
+                if (candidate.isPossible()) {
+                    thickness = THICK_FAR;
+                    alpha = POSSIBLE_ALPHA;
+                } else {
+                    double baseThickness = distanceSq <= finalNearSq
+                            ? THICK_NEAR
+                            : (distanceSq <= finalMidSq ? THICK_MID : THICK_FAR);
+                    thickness = candidate.shouldPulse() ? baseThickness * finalPulseScale : baseThickness;
+                    alpha = MATCH_ALPHA;
+                }
+                ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(OUTLINE_BASE_EXPAND), (float) thickness, r, g, b, alpha);
+
+                if (candidate.focused() && !candidate.isPossible()) {
+                    double focusThickness = candidate.shouldPulse() ? FOCUS_THICK * finalPulseScale : FOCUS_THICK;
+                    ThickOutlineRenderer.drawThickOutline(
+                            pose,
+                            consumer,
+                            box.inflate(OUTLINE_BASE_EXPAND + 0.004),
+                            (float) focusThickness,
+                            FOCUS_R,
+                            FOCUS_G,
+                            FOCUS_B,
+                            FOCUS_ALPHA
+                    );
+                }
+                rendered++;
+            }
+        });
+
+        matrices.popPose();
     }
 
     private record RenderCandidate(

@@ -79,7 +79,7 @@ public final class AltClickMoveToStorageHandler {
                     ? AutoMoveOperation.PULL_NON_MATCHING_FROM_STORAGE
                     : AutoMoveOperation.PUSH_MATCHING_TO_STORAGE;
             sendActionBar(client, Component.translatable(operation.startingTranslationKey()));
-            BlockHitResult hitResult = new BlockHitResult(Vec3.ofCenter(pos), direction, pos, false);
+            BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(pos), direction, pos, false);
             pendingAutoMove = new PendingAutoMove(resolved.get(), operation, AUTO_MOVE_TIMEOUT_TICKS);
             try {
                 openStorageForAutoMove(client, hitResult, pullNonMatching);
@@ -135,36 +135,35 @@ public final class AltClickMoveToStorageHandler {
 
     private static void openStorageForAutoMove(Minecraft client, BlockHitResult hitResult, boolean wasShiftActivated) {
         if (!wasShiftActivated) {
-            client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
+            client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hitResult);
             return;
         }
 
         LocalPlayer player = client.player;
-        // TODO: verify getLastInput() Mojang name (was getLastPlayerInput() in Yarn)
-        Input originalInput = player.getLastInput();
+        Input originalInput = player.getLastSentInput();
         Input unsneakingInput = withSneak(originalInput, false);
-        boolean wasSneaking = player.isSneaking();
+        boolean wasSneaking = player.isShiftKeyDown();
 
         player.connection.send(new ServerboundPlayerInputPacket(unsneakingInput));
-        player.setSneaking(false);
+        player.setShiftKeyDown(false);
         try {
-            client.gameMode.interactBlock(player, InteractionHand.MAIN_HAND, hitResult);
+            client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
         } finally {
-            player.setSneaking(wasSneaking);
-            if (originalInput.sneak()) {
+            player.setShiftKeyDown(wasSneaking);
+            if (originalInput.shift()) {
                 player.connection.send(new ServerboundPlayerInputPacket(originalInput));
             }
         }
     }
 
-    private static Input withSneak(Input input, boolean sneak) {
+    private static Input withSneak(Input input, boolean shift) {
         return new Input(
                 input.forward(),
                 input.backward(),
                 input.left(),
                 input.right(),
                 input.jump(),
-                sneak,
+                shift,
                 input.sprint()
         );
     }
@@ -189,7 +188,7 @@ public final class AltClickMoveToStorageHandler {
             return;
         }
 
-        if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+        if (client.gui.screen() instanceof AbstractContainerScreen<?>) {
             boolean hadMatchingStacks = current.operation() == AutoMoveOperation.PUSH_MATCHING_TO_STORAGE
                     && ContainerTagButtonManager.hasMatchingPlayerStacksForCurrentScreen(client, current.target());
             int movedStacks = switch (current.operation()) {
@@ -211,15 +210,15 @@ public final class AltClickMoveToStorageHandler {
 
     private static boolean isAltDown(Window window) {
         return window != null && (
-                InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
-                        || InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT)
+                InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT)
+                        || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT)
         );
     }
 
     private static boolean isShiftDown(Window window) {
         return window != null && (
-                InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
-                        || InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT)
+                InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT)
+                        || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)
         );
     }
 
@@ -256,7 +255,7 @@ public final class AltClickMoveToStorageHandler {
 
     private static void sendActionBar(Minecraft client, Component text) {
         if (client != null && client.player != null) {
-            client.player.sendMessage(text, true);
+            client.player.sendOverlayMessage(text);
         }
     }
 

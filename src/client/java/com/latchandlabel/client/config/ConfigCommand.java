@@ -5,7 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.book.BookCommand;
 import com.latchandlabel.client.data.TagScopeResolver;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -19,43 +19,43 @@ public final class ConfigCommand {
     }
 
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
-        var latchlabelLiteral = ClientCommandManager.literal("latchlabel")
-                .then(ClientCommandManager.literal("reload")
+        var latchlabelLiteral = ClientCommands.literal("latchlabel")
+                .then(ClientCommands.literal("reload")
                         .executes(context -> {
                             return reloadAll(context.getSource());
                         })
                 )
-                .then(ClientCommandManager.literal("world-profile")
-                        .then(ClientCommandManager.literal("get")
+                .then(ClientCommands.literal("world-profile")
+                        .then(ClientCommands.literal("get")
                                 .executes(context -> getWorldProfile(context.getSource()))
                         )
-                        .then(ClientCommandManager.literal("set")
-                                .then(ClientCommandManager.argument("name", StringArgumentType.greedyString())
+                        .then(ClientCommands.literal("set")
+                                .then(ClientCommands.argument("name", StringArgumentType.greedyString())
                                         .executes(context -> setWorldProfile(
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "name")
                                         ))
                                 )
                         )
-                        .then(ClientCommandManager.literal("clear")
+                        .then(ClientCommands.literal("clear")
                                 .executes(context -> clearWorldProfile(context.getSource()))
                         )
                 )
-                .then(ClientCommandManager.literal("config")
-                        .then(ClientCommandManager.literal("reload")
+                .then(ClientCommands.literal("config")
+                        .then(ClientCommands.literal("reload")
                                 .executes(context -> reloadAll(context.getSource()))
                         )
-                        .then(ClientCommandManager.literal("export")
+                        .then(ClientCommands.literal("export")
                                 .executes(context -> exportProfile(context.getSource(), ""))
-                                .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                                .then(ClientCommands.argument("path", StringArgumentType.greedyString())
                                         .executes(context -> exportProfile(
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "path")
                                         ))
                                 )
                         )
-                        .then(ClientCommandManager.literal("import")
-                                .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                        .then(ClientCommands.literal("import")
+                                .then(ClientCommands.argument("path", StringArgumentType.greedyString())
                                         .executes(context -> importProfile(
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "path")

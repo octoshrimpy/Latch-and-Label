@@ -55,21 +55,21 @@ public final class StorageTagReconciler {
         ticksUntilReconcile = RECONCILE_INTERVAL_TICKS;
 
         Level world = client.level;
-        var dimId = world.dimension().location();
+        var dimId = world.dimension().identifier();
         reconcileTagsInScope(world, key ->
-                key.dimensionId().equals(dimId) && world.hasChunkAt(key.pos()), "tick", client.isInSingleplayer());
+                key.dimensionId().equals(dimId) && world.hasChunkAt(key.pos()), "tick", client.hasSingleplayerServer());
     }
 
-    public void onChunkLoad(ClientLevel world, WorldChunk chunk) {
+    public void onChunkLoad(ClientLevel world, LevelChunk chunk) {
         if (!scopeReady) {
             return;
         }
         ChunkPos chunkPos = chunk.getPos();
-        var dimId = world.dimension().location();
+        var dimId = world.dimension().identifier();
         reconcileTagsInScope(world, key ->
-                key.dimensionId().equals(dimId) && new ChunkPos(key.pos()).equals(chunkPos),
+                key.dimensionId().equals(dimId) && ChunkPos.containing(key.pos()).equals(chunkPos),
                 "chunkLoad",
-                Minecraft.getInstance().isInSingleplayer());
+                Minecraft.getInstance().hasSingleplayerServer());
     }
 
     private void reconcileTagsInScope(Level world, Predicate<ChestKey> keyFilter, String context, boolean removeMissingStorage) {
@@ -117,7 +117,7 @@ public final class StorageTagReconciler {
 
         Direction[] horizontal = new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
         for (Direction direction : horizontal) {
-            BlockPos neighborPos = missingKey.pos().offset(direction);
+            BlockPos neighborPos = missingKey.pos().relative(direction);
             if (!world.hasChunkAt(neighborPos)) {
                 continue;
             }

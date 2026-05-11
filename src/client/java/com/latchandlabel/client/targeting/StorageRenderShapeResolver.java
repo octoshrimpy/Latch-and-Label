@@ -23,7 +23,7 @@ public final class StorageRenderShapeResolver {
         if (world == null || key == null) {
             return Optional.empty();
         }
-        if (!key.dimensionId().equals(world.dimension().location())) {
+        if (!key.dimensionId().equals(world.dimension().identifier())) {
             return Optional.empty();
         }
 
@@ -79,16 +79,16 @@ public final class StorageRenderShapeResolver {
             return Optional.empty();
         }
 
-        ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
         if (chestType == ChestType.SINGLE) {
             return Optional.empty();
         }
 
-        Direction facing = state.get(ChestBlock.FACING);
+        Direction facing = state.getValue(ChestBlock.FACING);
         Direction partnerDirection = chestType == ChestType.LEFT
-                ? facing.rotateYClockwise()
-                : facing.rotateYCounterclockwise();
-        BlockPos partnerPos = pos.offset(partnerDirection);
+                ? facing.getClockWise()
+                : facing.getCounterClockWise();
+        BlockPos partnerPos = pos.relative(partnerDirection);
         if (!world.hasChunkAt(partnerPos)) {
             return Optional.empty();
         }
@@ -97,13 +97,13 @@ public final class StorageRenderShapeResolver {
         if (!(partnerState.getBlock() instanceof ChestBlock)) {
             return Optional.empty();
         }
-        if (partnerState.get(ChestBlock.CHEST_TYPE) == ChestType.SINGLE) {
+        if (partnerState.getValue(ChestBlock.TYPE) == ChestType.SINGLE) {
             return Optional.empty();
         }
-        if (partnerState.get(ChestBlock.FACING) != facing) {
+        if (partnerState.getValue(ChestBlock.FACING) != facing) {
             return Optional.empty();
         }
 
-        return Optional.of(partnerPos.toImmutable());
+        return Optional.of(partnerPos.immutable());
     }
 }

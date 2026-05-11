@@ -67,15 +67,15 @@ public final class NearbyChestScanner {
 
         for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
             for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!world.hasChunkAt(chunkX, chunkZ)) {
+                if (!world.getChunkSource().hasChunk(chunkX, chunkZ)) {
                     continue;
                 }
-                WorldChunk chunk = world.getChunk(chunkX, chunkZ);
+                LevelChunk chunk = world.getChunk(chunkX, chunkZ);
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                     if (!TrackableStorage.isTrackableStorage(blockEntity)) {
                         continue;
                     }
-                    BlockPos pos = blockEntity.getPos();
+                    BlockPos pos = blockEntity.getBlockPos();
                     if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > maxDistanceSq) {
                         continue;
                     }
@@ -98,7 +98,7 @@ public final class NearbyChestScanner {
         }
 
         if (pendingOpen != null) {
-            if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+            if (client.gui.screen() instanceof AbstractContainerScreen<?>) {
                 if (openedScreenMatches(client, pendingOpen.target())) {
                     boolean matched = screenContainsQuery(client);
                     if (matched) {
@@ -128,7 +128,7 @@ public final class NearbyChestScanner {
             return;
         }
 
-        if (scanQueue.isEmpty() || client.currentScreen != null) {
+        if (scanQueue.isEmpty() || client.gui.screen() != null) {
             return;
         }
 
@@ -138,7 +138,7 @@ public final class NearbyChestScanner {
             if (candidate == null) {
                 continue;
             }
-            if (!candidate.dimensionId().equals(client.level.dimension().location())) {
+            if (!candidate.dimensionId().equals(client.level.dimension().identifier())) {
                 continue;
             }
             if (isWithinReach(client.player, candidate)) {
@@ -153,12 +153,12 @@ public final class NearbyChestScanner {
 
         BlockPos pos = next.pos();
         BlockHitResult hitResult = new BlockHitResult(
-                Vec3.ofCenter(pos),
+                Vec3.atCenterOf(pos),
                 Direction.UP,
                 pos,
                 false
         );
-        client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hitResult);
         pendingOpen = new PendingOpen(next, 20);
     }
 
@@ -168,7 +168,7 @@ public final class NearbyChestScanner {
     }
 
     private static boolean openedScreenMatches(Minecraft client, ChestKey expected) {
-        return com.latchandlabel.client.tagging.ContainerScreenContextResolver.resolve(client, client.currentScreen)
+        return com.latchandlabel.client.tagging.ContainerScreenContextResolver.resolve(client, client.gui.screen())
                 .filter(expected::equals)
                 .isPresent();
     }
@@ -180,7 +180,7 @@ public final class NearbyChestScanner {
 
         AbstractContainerMenu handler = client.player.containerMenu;
         for (var slot : handler.slots) {
-            if (slot.inventory instanceof Container) {
+            if (slot.container instanceof Container) {
                 continue;
             }
 

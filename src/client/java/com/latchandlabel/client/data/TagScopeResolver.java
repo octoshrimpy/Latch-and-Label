@@ -8,7 +8,6 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.server.IntegratedServer;
-import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -85,7 +84,7 @@ public final class TagScopeResolver {
     }
 
     public static String resolveCurrentMultiplayerServerScopeId(Minecraft client) {
-        if (client == null || client.isInSingleplayer()) {
+        if (client == null || client.hasSingleplayerServer()) {
             return null;
         }
         BaseScope multiplayer = resolveMultiplayerBaseScope(client);
@@ -105,7 +104,7 @@ public final class TagScopeResolver {
         if (client == null) {
             return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of(), false);
         }
-        if (client.isInSingleplayer()) {
+        if (client.hasSingleplayerServer()) {
             return resolveSingleplayerBaseScope(client);
         }
 
@@ -118,9 +117,9 @@ public final class TagScopeResolver {
 
     private static BaseScope resolveSingleplayerBaseScope(Minecraft client) {
         String worldId = "unknown";
-        IntegratedServer integratedServer = client.getServer();
+        IntegratedServer integratedServer = client.getSingleplayerServer();
         if (integratedServer != null) {
-            Path rootPath = integratedServer.getSavePath(WorldSavePath.ROOT);
+            Path rootPath = integratedServer.getServerDirectory();
             if (rootPath != null && rootPath.getFileName() != null) {
                 worldId = normalize(rootPath.getFileName().toString());
             }
@@ -136,14 +135,14 @@ public final class TagScopeResolver {
     private static BaseScope resolveMultiplayerBaseScope(Minecraft client) {
         List<String> rawCandidates = new ArrayList<>();
 
-        ServerData serverEntry = client.getCurrentServerEntry();
-        if (serverEntry != null && serverEntry.address != null && !serverEntry.address.isBlank()) {
-            rawCandidates.add(serverEntry.address);
+        ServerData serverEntry = client.getCurrentServer();
+        if (serverEntry != null && serverEntry.ip != null && !serverEntry.ip.isBlank()) {
+            rawCandidates.add(serverEntry.ip);
         }
 
         ClientPacketListener networkHandler = client.getConnection();
-        if (networkHandler != null && networkHandler.getConnection() != null && networkHandler.getConnection().getAddress() != null) {
-            rawCandidates.add(networkHandler.getConnection().getAddress().toString());
+        if (networkHandler != null && networkHandler.getConnection() != null && networkHandler.getConnection().getRemoteAddress() != null) {
+            rawCandidates.add(networkHandler.getConnection().getRemoteAddress().toString());
         }
 
         if (rawCandidates.isEmpty()) {
@@ -265,15 +264,15 @@ public final class TagScopeResolver {
         }
 
         StringBuilder raw = new StringBuilder(96);
-        raw.append("dim=").append(world.dimension().location());
-        raw.append(";bottom=").append(world.getBottomY());
+        raw.append("dim=").append(world.dimension().identifier());
+        raw.append(";bottom=").append(world.getMinY());
         raw.append(";height=").append(world.getHeight());
         raw.append(";sea=").append(world.getSeaLevel());
 
         try {
-            raw.append(";sky=").append(world.getDimension().hasSkyLight());
-            raw.append(";ceiling=").append(world.getDimension().hasCeiling());
-            raw.append(";coord=").append(world.getDimension().coordinateScale());
+            raw.append(";sky=").append(world.dimensionType().hasSkyLight());
+            raw.append(";ceiling=").append(world.dimensionType().hasCeiling());
+            raw.append(";coord=").append(world.dimensionType().coordinateScale());
         } catch (Exception e) {
             LatchLabel.LOGGER.warn("[ScopeResolver] Partial dimension fingerprint due to: {}", e.getMessage());
         }

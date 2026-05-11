@@ -1,7 +1,7 @@
 package com.latchandlabel.client.store;
 
 import com.latchandlabel.client.model.ChestKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class TagStoreTest {
     private static final ChestKey KEY = new ChestKey(
-            ResourceLocation.tryParse("minecraft:overworld"),
+            Identifier.tryParse("minecraft:overworld"),
             new BlockPos(1, 64, 2)
     );
 

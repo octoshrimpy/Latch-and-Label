@@ -15,7 +15,7 @@ import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -46,8 +46,8 @@ import java.util.concurrent.TimeUnit;
 public final class ClientDataManager implements AutoCloseable {
     private static final int CURRENT_VERSION = 1;
     private static final long SAVE_DEBOUNCE_MS = 1_000L;
-    private static final ResourceLocation FALLBACK_ICON_ITEM_ID = Objects.requireNonNull(
-            ResourceLocation.tryParse("minecraft:stone"),
+    private static final Identifier FALLBACK_ICON_ITEM_ID = Objects.requireNonNull(
+            Identifier.tryParse("minecraft:stone"),
             "Invalid fallback identifier"
     );
     private static final String SCOPES_DIR_NAME = "scopes";
@@ -577,10 +577,10 @@ public final class ClientDataManager implements AutoCloseable {
         root.add("categories", serializedCategories);
 
         JsonObject itemOverrides = new JsonObject();
-        for (ResourceLocation blockedItemId : snapshot.blockedItemMappings()) {
+        for (Identifier blockedItemId : snapshot.blockedItemMappings()) {
             itemOverrides.add(blockedItemId.toString(), JsonNull.INSTANCE);
         }
-        for (Map.Entry<ResourceLocation, String> entry : snapshot.itemOverrides().entrySet()) {
+        for (Map.Entry<Identifier, String> entry : snapshot.itemOverrides().entrySet()) {
             itemOverrides.addProperty(entry.getKey().toString(), entry.getValue());
         }
         root.add("itemOverrides", itemOverrides);
@@ -685,10 +685,10 @@ public final class ClientDataManager implements AutoCloseable {
             return ParsedOverrides.empty();
         }
 
-        Map<ResourceLocation, String> parsedOverrides = new LinkedHashMap<>();
-        Set<ResourceLocation> blocked = new LinkedHashSet<>();
+        Map<Identifier, String> parsedOverrides = new LinkedHashMap<>();
+        Set<Identifier> blocked = new LinkedHashSet<>();
         for (Map.Entry<String, JsonElement> entry : overridesElement.getAsJsonObject().entrySet()) {
-            ResourceLocation itemId = ResourceLocation.tryParse(entry.getKey());
+            Identifier itemId = Identifier.tryParse(entry.getKey());
             if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) {
                 continue;
             }
@@ -770,7 +770,7 @@ public final class ClientDataManager implements AutoCloseable {
             return null;
         }
 
-        ResourceLocation iconItemId = ResourceLocation.tryParse(iconItemIdRaw);
+        Identifier iconItemId = Identifier.tryParse(iconItemIdRaw);
         if (iconItemId == null) {
             iconItemId = FALLBACK_ICON_ITEM_ID;
         }
@@ -871,7 +871,7 @@ public final class ClientDataManager implements AutoCloseable {
         return List.copyOf(normalized);
     }
 
-    private record ParsedOverrides(Map<ResourceLocation, String> overrides, Set<ResourceLocation> blocked) {
+    private record ParsedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
         private static ParsedOverrides empty() {
             return new ParsedOverrides(Map.of(), Set.of());
         }
@@ -886,8 +886,8 @@ public final class ClientDataManager implements AutoCloseable {
     private record PersistenceSnapshot(
             String scopeId,
             List<Category> categories,
-            Map<ResourceLocation, String> itemOverrides,
-            Set<ResourceLocation> blockedItemMappings,
+            Map<Identifier, String> itemOverrides,
+            Set<Identifier> blockedItemMappings,
             Map<ChestKey, String> tags,
             String lastUsedCategoryId
     ) {

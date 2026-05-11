@@ -44,11 +44,8 @@ public final class DumpService {
         // Collect categories present in player inventory
         Set<String> inventoryCategories = collectInventoryCategories(client.player);
         if (inventoryCategories.isEmpty()) {
-            if (client.inGameHud != null) {
-                client.inGameHud.setOverlayMessage(
-                        Component.translatable("latchlabel.dump.no_matching_items"),
-                        false
-                );
+            if (client.player != null) {
+                client.player.sendOverlayMessage(Component.translatable("latchlabel.dump.no_matching_items"));
             }
             return;
         }
@@ -67,28 +64,22 @@ public final class DumpService {
 
         // Filter and sort by distance
         allTags.entrySet().stream()
-                .filter(entry -> entry.getKey().dimensionId().equals(client.level.dimension().location()))
+                .filter(entry -> entry.getKey().dimensionId().equals(client.level.dimension().identifier()))
                 .filter(entry -> inventoryCategories.contains(entry.getValue()))
                 .filter(entry -> DumpSettings.queueMode() || isWithinRange(player, entry.getKey()))
                 .sorted(Comparator.comparingDouble(entry -> distanceSq(player, entry.getKey())))
                 .forEach(entry -> dumpQueue.add(new DumpTarget(entry.getKey(), entry.getValue())));
 
         if (dumpQueue.isEmpty()) {
-            if (client.inGameHud != null) {
-                client.inGameHud.setOverlayMessage(
-                        Component.translatable("latchlabel.dump.no_containers_in_range"),
-                        false
-                );
+            if (client.player != null) {
+                client.player.sendOverlayMessage(Component.translatable("latchlabel.dump.no_containers_in_range"));
             }
             return;
         }
 
         active = true;
-        if (client.inGameHud != null) {
-            client.inGameHud.setOverlayMessage(
-                    Component.translatable("latchlabel.dump.starting", dumpQueue.size()),
-                    false
-            );
+        if (client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable("latchlabel.dump.starting", dumpQueue.size()));
         }
     }
 
@@ -102,7 +93,7 @@ public final class DumpService {
         }
 
         if (autoCloseNext) {
-            if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+            if (client.gui.screen() instanceof AbstractContainerScreen<?>) {
                 client.player.closeContainer();
             }
             autoCloseNext = false;
@@ -118,7 +109,7 @@ public final class DumpService {
         }
 
         // If a screen just opened after we interacted
-        if (awaitingScreen && client.currentScreen instanceof AbstractContainerScreen<?> handledScreen) {
+        if (awaitingScreen && client.gui.screen() instanceof AbstractContainerScreen<?> handledScreen) {
             int moved = ContainerTagButtonManager.moveMatchingFromPlayerToStorage(
                     client, handledScreen.getMenu(), currentTarget.categoryId());
             if (moved > 0) {
@@ -130,16 +121,13 @@ public final class DumpService {
         }
 
         // Don't process while a screen is open
-        if (client.currentScreen != null) {
+        if (client.gui.screen() != null) {
             return;
         }
 
         if (dumpQueue.isEmpty()) {
-            if (client.inGameHud != null) {
-                client.inGameHud.setOverlayMessage(
-                        Component.translatable("latchlabel.dump.done", containersVisited),
-                        false
-                );
+            if (client.player != null) {
+                client.player.sendOverlayMessage(Component.translatable("latchlabel.dump.done", containersVisited));
             }
             stop();
             return;
@@ -155,7 +143,7 @@ public final class DumpService {
             while (!dumpQueue.isEmpty() && checked < queueSize) {
                 DumpTarget candidate = dumpQueue.poll();
                 checked++;
-                if (!candidate.key().dimensionId().equals(client.level.dimension().location())) {
+                if (!candidate.key().dimensionId().equals(client.level.dimension().identifier())) {
                     continue; // discard dimension mismatches
                 }
                 if (isWithinRange(player, candidate.key())) {
@@ -174,7 +162,7 @@ public final class DumpService {
             DumpTarget next = null;
             while (!dumpQueue.isEmpty()) {
                 DumpTarget candidate = dumpQueue.poll();
-                if (!candidate.key().dimensionId().equals(client.level.dimension().location())) {
+                if (!candidate.key().dimensionId().equals(client.level.dimension().identifier())) {
                     continue;
                 }
                 if (isWithinRange(player, candidate.key())) {
@@ -183,11 +171,8 @@ public final class DumpService {
                 }
             }
             if (next == null) {
-                if (client.inGameHud != null) {
-                    client.inGameHud.setOverlayMessage(
-                            Component.translatable("latchlabel.dump.done", containersVisited),
-                            false
-                    );
+                if (client.player != null) {
+                    client.player.sendOverlayMessage(Component.translatable("latchlabel.dump.done", containersVisited));
                 }
                 stop();
                 return;
@@ -200,12 +185,12 @@ public final class DumpService {
         currentTarget = target;
         BlockPos pos = target.key().pos();
         BlockHitResult hitResult = new BlockHitResult(
-                Vec3.ofCenter(pos),
+                Vec3.atCenterOf(pos),
                 Direction.UP,
                 pos,
                 false
         );
-        client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hitResult);
         awaitingScreen = true;
         cooldownTicks = 2;
     }
@@ -222,7 +207,7 @@ public final class DumpService {
 
     private static Set<String> collectInventoryCategories(Player player) {
         Set<String> categories = new HashSet<>();
-        for (int i = 0; i < player.getInventory().size(); i++) {
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (stack.isEmpty()) {
                 continue;

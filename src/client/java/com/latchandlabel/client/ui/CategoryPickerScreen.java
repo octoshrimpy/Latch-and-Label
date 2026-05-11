@@ -4,17 +4,17 @@ import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.GuiGraphics;
-// TODO: verify Click package after ./gradlew genSources — was net.minecraft.client.gui.Click in 1.21.11
-import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+// TODO: verify MouseButtonEvent package after ./gradlew genSources — was net.minecraft.client.gui.MouseButtonEvent in 1.21.11
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -34,8 +34,8 @@ public final class CategoryPickerScreen extends Screen {
     private static final int COLUMN_GAP = 8;
     private static final int REMOVE_BUTTON_HEIGHT = 18;
     private static final int NEW_CATEGORY_COLOR = 0x9D9D97;
-    private static final ResourceLocation NEW_CATEGORY_ICON = Objects.requireNonNull(
-            ResourceLocation.tryParse("minecraft:writable_book"),
+    private static final Identifier NEW_CATEGORY_ICON = Objects.requireNonNull(
+            Identifier.tryParse("minecraft:writable_book"),
             "Invalid default icon identifier"
     );
 
@@ -64,11 +64,11 @@ public final class CategoryPickerScreen extends Screen {
         int panelLeft = (width - PANEL_WIDTH) / 2;
         int panelTop = (height - PANEL_HEIGHT) / 2;
 
-        searchField = new EditBox(textRenderer, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, .Component.empty());
-        searchField.setChangedListener(value -> refilter());
+        searchField = new EditBox(font, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, Component.empty());
+        searchField.setResponder(value -> refilter());
         searchField.setMaxLength(64);
 
-        addDrawableChild(searchField);
+        addRenderableWidget(searchField);
         setInitialFocus(searchField);
         searchField.setFocused(true);
 
@@ -76,7 +76,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
@@ -85,11 +85,11 @@ public final class CategoryPickerScreen extends Screen {
         int removeButtonTop = panelTop + PANEL_HEIGHT - REMOVE_BUTTON_HEIGHT - 8;
 
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
-        context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
+        GuiUtils.drawBorder(context, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
 
-        context.drawString(textRenderer, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
+        context.text(font, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
 
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
 
         List<Category> rows = visibleCategories();
         int listLeft = panelLeft + 10;
@@ -111,20 +111,20 @@ public final class CategoryPickerScreen extends Screen {
         int removeButtonTextColor = canClearCurrent ? 0xFFFFFFFF : 0xFF888888;
 
         context.fill(removeButtonLeft, removeButtonTop, removeButtonRight, removeButtonTop + REMOVE_BUTTON_HEIGHT, removeButtonFill);
-        context.drawStrokedRectangle(removeButtonLeft, removeButtonTop, removeButtonRight - removeButtonLeft, REMOVE_BUTTON_HEIGHT, removeButtonStroke);
+        GuiUtils.drawBorder(context, removeButtonLeft, removeButtonTop, removeButtonRight - removeButtonLeft, REMOVE_BUTTON_HEIGHT, removeButtonStroke);
         Component removeLabel = Component.translatable("screen.latchlabel.category_picker.remove_current");
-        int centeredTextX = removeButtonLeft + ((removeButtonRight - removeButtonLeft) - textRenderer.getWidth(removeLabel)) / 2;
-        context.drawString(textRenderer, removeLabel, centeredTextX, removeButtonTop + 5, removeButtonTextColor, true);
+        int centeredTextX = removeButtonLeft + ((removeButtonRight - removeButtonLeft) - font.width(removeLabel)) / 2;
+        context.text(font, removeLabel, centeredTextX, removeButtonTop + 5, removeButtonTextColor, true);
     }
 
     @Override
-    public void renderBackground(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         // We draw a custom translucent background in render(); skip Screen's blur pass to avoid
         // "Can only blur once per frame" when this picker is opened over another blurred screen.
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean consumed) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean consumed) {
         if (super.mouseClicked(click, consumed)) {
             return true;
         }
@@ -160,8 +160,8 @@ public final class CategoryPickerScreen extends Screen {
             int buttonBottom = buttonTop + ROW_HEIGHT - 4;
 
             if (isWithin(mouseX, mouseY, editButtonX, buttonTop, editButtonX + EDIT_BUTTON_WIDTH, buttonBottom)) {
-                if (client != null && category != null) {
-                    client.setScreen(new CategoryItemMappingScreen(this, category));
+                if (minecraft != null && category != null) {
+                    minecraft.gui.setScreen(new CategoryItemMappingScreen(this, category));
                     return true;
                 }
                 if (category == null) {
@@ -187,14 +187,14 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput keyInput) {
+    public boolean keyPressed(KeyEvent keyInput) {
         if (searchField != null && searchField.keyPressed(keyInput)) {
             return true;
         }
 
         int keyCode = keyInput.key();
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            close();
+            onClose();
             return true;
         }
 
@@ -226,7 +226,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharInput charInput) {
+    public boolean charTyped(CharacterEvent charInput) {
         if (searchField != null && searchField.charTyped(charInput)) {
             return true;
         }
@@ -234,7 +234,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         if (!completed) {
             onCancel.run();
         }
@@ -254,7 +254,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     private void refilter() {
-        String query = searchField == null ? "" : searchField.getText().toLowerCase(Locale.ROOT).trim();
+        String query = searchField == null ? "" : searchField.getValue().toLowerCase(Locale.ROOT).trim();
 
         filteredCategories.clear();
         for (Category category : LatchLabelClientState.categoryStore().listAll()) {
@@ -273,7 +273,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     private void drawCategoryCell(
-            GuiGraphics context,
+            GuiGraphicsExtractor context,
             int left,
             int columnWidth,
             int listTop,
@@ -301,20 +301,20 @@ public final class CategoryPickerScreen extends Screen {
         int buttonTop = y + 1;
         int buttonBottom = buttonTop + ROW_HEIGHT - 4;
         context.fill(editButtonX, buttonTop, editButtonX + EDIT_BUTTON_WIDTH, buttonBottom, 0xFF2D2D2D);
-        context.drawStrokedRectangle(editButtonX, buttonTop, EDIT_BUTTON_WIDTH, buttonBottom - buttonTop, 0xFF666666);
+        GuiUtils.drawBorder(context, editButtonX, buttonTop, EDIT_BUTTON_WIDTH, buttonBottom - buttonTop, 0xFF666666);
         if (emptySlot) {
-            context.drawString(textRenderer, Component.literal("+"), editButtonX + 7, y + 4, 0xFFFFFFFF, true);
+            context.text(font, Component.literal("+"), editButtonX + 7, y + 4, 0xFFFFFFFF, true);
             return;
         }
 
-        context.renderItem(new ItemStack(Items.WRITABLE_BOOK), editButtonX + 2, y + 1);
+        context.item(new ItemStack(Items.WRITABLE_BOOK), editButtonX + 2, y + 1);
         if (BuiltInRegistries.ITEM.containsKey(category.iconItemId())) {
-            context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(category.iconItemId())), x + 10, y + 1);
+            context.item(new ItemStack(BuiltInRegistries.ITEM.getValue(category.iconItemId())), x + 10, y + 1);
         }
 
         int maxNameWidth = (editButtonX - 6) - (x + 30);
-        String trimmedName = textRenderer.trimToWidth(category.name(), Math.max(0, maxNameWidth));
-        context.drawString(textRenderer, Component.literal(trimmedName), x + 30, y + 4, 0xFFFFFFFF, true);
+        String trimmedName = font.plainSubstrByWidth(category.name(), Math.max(0, maxNameWidth));
+        context.text(font, Component.literal(trimmedName), x + 30, y + 4, 0xFFFFFFFF, true);
     }
 
     private static boolean isCellHit(double mouseX, double mouseY, int left, int y, int right) {
@@ -340,8 +340,8 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     private void returnToParent() {
-        if (client != null) {
-            client.setScreen(parentScreen);
+        if (minecraft != null) {
+            minecraft.gui.setScreen(parentScreen);
         }
     }
 
@@ -349,8 +349,8 @@ public final class CategoryPickerScreen extends Screen {
         Category created = LatchLabelClientState.categoryStore()
                 .createCategory(Component.translatable("screen.latchlabel.category_picker.new_category_name").getString(), NEW_CATEGORY_COLOR, NEW_CATEGORY_ICON);
         refilter();
-        if (client != null) {
-            client.setScreen(new CategoryItemMappingScreen(this, created));
+        if (minecraft != null) {
+            minecraft.gui.setScreen(new CategoryItemMappingScreen(this, created));
         }
     }
 

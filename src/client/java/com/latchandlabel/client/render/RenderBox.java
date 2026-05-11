@@ -21,11 +21,11 @@ public final class RenderBox {
             float b,
             float a
     ) {
-        drawFilledBox(matrices.peek(), consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
+        drawFilledBox(matrices.last(), consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
     }
 
     public static void drawFilledBox(
-            PoseStack.Entry entry,
+            PoseStack.Pose pose,
             VertexConsumer consumer,
             double minX,
             double minY,
@@ -39,7 +39,7 @@ public final class RenderBox {
             float a
     ) {
         // North (-Z)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 maxX, minY, minZ,
                 minX, minY, minZ,
                 minX, maxY, minZ,
@@ -47,7 +47,7 @@ public final class RenderBox {
                 r, g, b, a
         );
         // South (+Z)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 minX, minY, maxZ,
                 maxX, minY, maxZ,
                 maxX, maxY, maxZ,
@@ -55,7 +55,7 @@ public final class RenderBox {
                 r, g, b, a
         );
         // West (-X)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 minX, minY, minZ,
                 minX, minY, maxZ,
                 minX, maxY, maxZ,
@@ -63,7 +63,7 @@ public final class RenderBox {
                 r, g, b, a
         );
         // East (+X)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 maxX, minY, maxZ,
                 maxX, minY, minZ,
                 maxX, maxY, minZ,
@@ -71,7 +71,7 @@ public final class RenderBox {
                 r, g, b, a
         );
         // Bottom (-Y)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 minX, minY, minZ,
                 maxX, minY, minZ,
                 maxX, minY, maxZ,
@@ -79,7 +79,7 @@ public final class RenderBox {
                 r, g, b, a
         );
         // Top (+Y)
-        quad(entry, consumer,
+        quad(pose, consumer,
                 minX, maxY, maxZ,
                 maxX, maxY, maxZ,
                 maxX, maxY, minZ,
@@ -89,7 +89,7 @@ public final class RenderBox {
     }
 
     private static void quad(
-            PoseStack.Entry entry,
+            PoseStack.Pose pose,
             VertexConsumer consumer,
             double x1,
             double y1,
@@ -108,9 +108,9 @@ public final class RenderBox {
             float b,
             float a
     ) {
-        consumer.vertex(entry, (float) x1, (float) y1, (float) z1).color(r, g, b, a);
-        consumer.vertex(entry, (float) x2, (float) y2, (float) z2).color(r, g, b, a);
-        consumer.vertex(entry, (float) x3, (float) y3, (float) z3).color(r, g, b, a);
-        consumer.vertex(entry, (float) x4, (float) y4, (float) z4).color(r, g, b, a);
+        consumer.addVertex(pose, (float) x1, (float) y1, (float) z1).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) x2, (float) y2, (float) z2).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) x3, (float) y3, (float) z3).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) x4, (float) y4, (float) z4).setColor(r, g, b, a);
     }
 }

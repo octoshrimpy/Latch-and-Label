@@ -11,10 +11,11 @@ import com.latchandlabel.client.dump.DumpSettings;
 import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
+import com.latchandlabel.client.ui.GuiUtils;
 
 public final class LatchLabelConfigScreen extends Screen {
     private static final int MIN_INSPECT_RANGE = 1;
@@ -74,75 +75,75 @@ public final class LatchLabelConfigScreen extends Screen {
         addDetectionThresholdControls();
         addBookButtons();
 
-        addDrawableChild(Button.builder(Component.translatable("gui.done"), button -> close())
-                .dimensions(panelLeft + panelWidth - 96, panelTop + panelHeight - 24, 80, 20)
+        addRenderableWidget(Button.builder(Component.translatable("gui.done"), button -> onClose())
+                .pos(panelLeft + panelWidth - 96, panelTop + panelHeight - 24).size(80, 20)
                 .build());
     }
 
     @Override
-    public void close() {
-        if (client != null) {
-            client.setScreen(parent);
+    public void onClose() {
+        if (minecraft != null) {
+            minecraft.gui.setScreen(parent);
         }
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
         context.fill(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight, 0xE0151515);
-        context.drawStrokedRectangle(panelLeft, panelTop, panelWidth, panelHeight, 0xFF3A3A3A);
+        GuiUtils.drawBorder(context, panelLeft, panelTop, panelWidth, panelHeight, 0xFF3A3A3A);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, panelLeft + (panelWidth / 2), panelTop + 10, 0xFFFFFFFF);
+        context.centeredText(font, title, panelLeft + (panelWidth / 2), panelTop + 10, 0xFFFFFFFF);
         drawLabels(context);
 
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
-    private void drawLabels(GuiGraphics context) {
+    private void drawLabels(GuiGraphicsExtractor context) {
         int y = panelTop + 36;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.reload_categories_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.reload_categories_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.reload_tags_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.reload_tags_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.inspect_range_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.inspect_range_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.inspect_mode_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.inspect_mode_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.find_radius_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.find_radius_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.highlight_duration_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.highlight_duration_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.dump_range_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.dump_range_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.variant_matching_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.variant_matching_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.allow_f_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.allow_f_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.find_keybind_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.find_keybind_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.auto_refresh_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.auto_refresh_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.detected_category_threshold_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.detected_category_threshold_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.book_export_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.book_export_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.drawString(textRenderer, Component.translatable("screen.latchlabel.config.book_import_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.book_import_label"), labelX, y, 0xFFE8E8E8, true);
     }
 
     private void addReloadButtons() {
-        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.config.reload_categories"), button -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.latchlabel.config.reload_categories"), button -> {
                     LatchLabelClientState.dataManager().reloadCategoriesFromDisk();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.config.reload_tags"), button -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.latchlabel.config.reload_tags"), button -> {
                     LatchLabelClientState.dataManager().reloadTagsFromDisk();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
     }
@@ -164,12 +165,12 @@ public final class LatchLabelConfigScreen extends Screen {
     }
 
     private void addInspectModeControl() {
-        inspectModeButton = addDrawableChild(Button.builder(inspectModeText(), button -> {
+        inspectModeButton = addRenderableWidget(Button.builder(inspectModeText(), button -> {
                     InspectSettings.setActivationMode(nextInspectMode(InspectSettings.activationMode()));
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
     }
@@ -223,48 +224,48 @@ public final class LatchLabelConfigScreen extends Screen {
     }
 
     private void addToggleControls() {
-        variantMatchingButton = addDrawableChild(Button.builder(toggleText(FindSettings.variantMatchingEnabled()), button -> {
+        variantMatchingButton = addRenderableWidget(Button.builder(toggleText(FindSettings.variantMatchingEnabled()), button -> {
                     FindSettings.setVariantMatchingEnabled(!FindSettings.variantMatchingEnabled());
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        slashFButton = addDrawableChild(Button.builder(toggleText(FindSettings.allowSlashFCommand()), button -> {
+        slashFButton = addRenderableWidget(Button.builder(toggleText(FindSettings.allowSlashFCommand()), button -> {
                     FindSettings.setAllowSlashFCommand(!FindSettings.allowSlashFCommand());
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        findKeybindButton = addDrawableChild(Button.builder(toggleText(FindSettings.allowFindKeybind()), button -> {
+        findKeybindButton = addRenderableWidget(Button.builder(toggleText(FindSettings.allowFindKeybind()), button -> {
                     FindSettings.setAllowFindKeybind(!FindSettings.allowFindKeybind());
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        moveSourceButton = addDrawableChild(Button.builder(moveSourceText(), button -> {
+        moveSourceButton = addRenderableWidget(Button.builder(moveSourceText(), button -> {
                     TransferSettings.setMoveSourceMode(nextMoveSourceMode(TransferSettings.moveSourceMode()));
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        autoRefreshButton = addDrawableChild(Button.builder(toggleText(FindSettings.autoRefreshContents()), button -> {
+        autoRefreshButton = addRenderableWidget(Button.builder(toggleText(FindSettings.autoRefreshContents()), button -> {
                     FindSettings.setAutoRefreshContents(!FindSettings.autoRefreshContents());
                     saveConfig();
                     refreshButtonLabels();
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
     }
@@ -290,7 +291,7 @@ public final class LatchLabelConfigScreen extends Screen {
     }
 
     private void addBookButtons() {
-        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.config.book_export"), button -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.latchlabel.config.book_export"), button -> {
                     Minecraft mc = Minecraft.getInstance();
                     BookExportImportService.ExportResult result = BookExportImportService.exportToHeldBook(
                             mc,
@@ -299,14 +300,14 @@ public final class LatchLabelConfigScreen extends Screen {
                             LatchLabelClientState.itemCategoryMappingService()
                     );
                     if (mc.player != null) {
-                        mc.player.sendMessage(result.message(), false);
+                        mc.player.sendSystemMessage(result.message());
                     }
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
 
-        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.config.book_import"), button -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.latchlabel.config.book_import"), button -> {
                     Minecraft mc = Minecraft.getInstance();
                     BookExportImportService.ImportResult result = BookExportImportService.importFromHeldBook(
                             mc,
@@ -315,10 +316,10 @@ public final class LatchLabelConfigScreen extends Screen {
                             LatchLabelClientState.itemCategoryMappingService()
                     );
                     if (mc.player != null) {
-                        mc.player.sendMessage(result.message(), false);
+                        mc.player.sendSystemMessage(result.message());
                     }
                 })
-                .dimensions(controlX, rowY, controlWidth, 20)
+                .pos(controlX, rowY).size(controlWidth, 20)
                 .build());
         rowY += rowHeight;
     }
@@ -329,24 +330,24 @@ public final class LatchLabelConfigScreen extends Screen {
         int valueWidth = controlWidth - minusWidth - plusWidth - 6;
         int valueX = controlX + minusWidth + 3;
 
-        Button valueButton = addDrawableChild(Button.builder(Component.literal(String.valueOf(initialValue)), button -> {
+        Button valueButton = addRenderableWidget(Button.builder(Component.literal(String.valueOf(initialValue)), button -> {
                 })
-                .dimensions(valueX, y, valueWidth, 20)
+                .pos(valueX, y).size(valueWidth, 20)
                 .build());
         valueButton.active = false;
 
-        addDrawableChild(Button.builder(Component.literal("-"), button -> {
+        addRenderableWidget(Button.builder(Component.literal("-"), button -> {
                     int updated = updater.update(-1);
                     valueButton.setMessage(Component.literal(String.valueOf(updated)));
                 })
-                .dimensions(controlX, y, minusWidth, 20)
+                .pos(controlX, y).size(minusWidth, 20)
                 .build());
 
-        addDrawableChild(Button.builder(Component.literal("+"), button -> {
+        addRenderableWidget(Button.builder(Component.literal("+"), button -> {
                     int updated = updater.update(1);
                     valueButton.setMessage(Component.literal(String.valueOf(updated)));
                 })
-                .dimensions(controlX + controlWidth - plusWidth, y, plusWidth, 20)
+                .pos(controlX + controlWidth - plusWidth, y).size(plusWidth, 20)
                 .build());
     }
 

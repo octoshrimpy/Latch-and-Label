@@ -36,7 +36,7 @@ public final class ContainerScreenContextResolver {
         Optional<ChestKey> fromRecent = ContainerInteractionTracker.getRecent();
         if (fromRecent.isPresent()) {
             ChestKey key = fromRecent.get();
-            if (key.dimensionId().equals(client.level.dimension().location()) && screenHandlerMatches(client, screen)) {
+            if (key.dimensionId().equals(client.level.dimension().identifier()) && screenHandlerMatches(client, screen)) {
                 debug("Resolved container from recent interaction: " + key.toStringKey());
                 return Optional.of(key);
             }

@@ -21,9 +21,9 @@ public final class TaggingController {
             return;
         }
         ChestKey resolvedKey = resolveKey(client, chestKey);
-        Screen parentScreen = client.currentScreen;
+        Screen parentScreen = client.gui.screen();
 
-        client.setScreen(new CategoryPickerScreen(
+        client.gui.setScreen(new CategoryPickerScreen(
                 parentScreen,
                 resolvedKey,
                 categoryId -> {
@@ -59,8 +59,8 @@ public final class TaggingController {
     }
 
     private static void showOverlay(Minecraft client, Component message) {
-        if (client.inGameHud != null) {
-            client.inGameHud.setOverlayMessage(message, false);
+        if (client.player != null) {
+            client.player.sendOverlayMessage(message);
         }
     }
 }

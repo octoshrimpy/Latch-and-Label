@@ -15,7 +15,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 
@@ -67,7 +67,7 @@ public final class ShulkerItemCategoryBridge {
                 return InteractionResult.PASS;
             }
 
-            ItemStack handStack = player.getStackInHand(hand);
+            ItemStack handStack = player.getItemInHand(hand);
             if (!isShulkerItem(handStack)) {
                 return InteractionResult.PASS;
             }
@@ -84,8 +84,8 @@ public final class ShulkerItemCategoryBridge {
                     PENDING_PLACEMENTS.pollFirst();
                 }
                 PENDING_PLACEMENTS.addLast(new PendingPlacement(
-                        world.dimension().location(),
-                        placementPos.toImmutable(),
+                        world.dimension().identifier(),
+                        placementPos.immutable(),
                         categoryId,
                         wasShulkerAtTarget,
                         nowMs
@@ -125,7 +125,7 @@ public final class ShulkerItemCategoryBridge {
             return;
         }
 
-        ChestKey key = new ChestKey(world.dimension().location(), pos.toImmutable());
+        ChestKey key = new ChestKey(world.dimension().identifier(), pos.immutable());
         Optional<String> categoryId = LatchLabelClientState.tagStore().getTag(key);
         if (categoryId.isEmpty()) {
             return;
@@ -187,7 +187,7 @@ public final class ShulkerItemCategoryBridge {
                 continue;
             }
 
-            if (!Objects.equals(pending.dimensionId(), client.level.dimension().location())) {
+            if (!Objects.equals(pending.dimensionId(), client.level.dimension().identifier())) {
                 PENDING_PLACEMENTS.removeFirst();
                 continue;
             }
@@ -212,10 +212,10 @@ public final class ShulkerItemCategoryBridge {
             return hitPos;
         }
 
-        if (world.getBlockState(hitPos).isReplaceable()) {
+        if (world.getBlockState(hitPos).canBeReplaced()) {
             return hitPos;
         }
-        return hitPos.offset(side);
+        return hitPos.relative(side);
     }
 
     private static Map<String, Integer> snapshotShulkerInventoryCounts(Minecraft client) {
@@ -225,7 +225,7 @@ public final class ShulkerItemCategoryBridge {
         }
 
         var inventory = client.player.getInventory();
-        for (int i = 0; i < inventory.size(); i++) {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
             if (!isShulkerItem(stack) || stack.isEmpty()) {
                 continue;
@@ -269,8 +269,7 @@ public final class ShulkerItemCategoryBridge {
             return null;
         }
 
-        var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (itemId == null) {
             return null;
         }
@@ -278,7 +277,7 @@ public final class ShulkerItemCategoryBridge {
         StringBuilder fingerprint = new StringBuilder(itemId.toString());
         ItemContainerContents container = stack.get(DataComponents.CONTAINER);
         if (container != null) {
-            String joined = container.streamNonEmpty()
+            String joined = container.nonEmptyItemCopyStream()
                     .map(ShulkerItemCategoryBridge::fingerprintContainedStack)
                     .sorted()
                     .reduce((left, right) -> left + "," + right)
@@ -292,8 +291,7 @@ public final class ShulkerItemCategoryBridge {
     }
 
     private static String fingerprintContainedStack(ItemStack stack) {
-        var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (itemId == null) {
             return "unknown:0";
         }
@@ -304,7 +302,7 @@ public final class ShulkerItemCategoryBridge {
     }
 
     private record PendingPlacement(
-            ResourceLocation dimensionId,
+            Identifier dimensionId,
             BlockPos pos,
             String categoryId,
             boolean wasShulkerAtTarget,

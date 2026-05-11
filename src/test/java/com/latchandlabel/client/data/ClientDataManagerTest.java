@@ -4,7 +4,7 @@ import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.CategoryStore;
 import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClientDataManagerTest {
     private static final ChestKey FALLBACK_KEY = new ChestKey(
-            ResourceLocation.tryParse("minecraft:overworld"),
+            Identifier.tryParse("minecraft:overworld"),
             new BlockPos(4, 64, 8)
     );
 

@@ -3,7 +3,7 @@ package com.latchandlabel.client.store;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
@@ -18,9 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class CategoryLifecycleServiceTest {
     private static final String TARGET_CATEGORY = "target";
     private static final String OTHER_CATEGORY = "other";
-    private static final ResourceLocation STONE = ResourceLocation.tryParse("minecraft:stone");
-    private static final ResourceLocation DIRT = ResourceLocation.tryParse("minecraft:dirt");
-    private static final ResourceLocation GOLD = ResourceLocation.tryParse("minecraft:gold_ingot");
+    private static final Identifier STONE = Identifier.tryParse("minecraft:stone");
+    private static final Identifier DIRT = Identifier.tryParse("minecraft:dirt");
+    private static final Identifier GOLD = Identifier.tryParse("minecraft:gold_ingot");
     private static final ChestKey ACTIVE_KEY = keyAt(1);
     private static final ChestKey FALLBACK_KEY = keyAt(2);
     private static final ChestKey OTHER_KEY = keyAt(3);
@@ -67,6 +67,6 @@ final class CategoryLifecycleServiceTest {
     }
 
     private static ChestKey keyAt(int x) {
-        return new ChestKey(ResourceLocation.tryParse("minecraft:overworld"), new BlockPos(x, 64, 0));
+        return new ChestKey(Identifier.tryParse("minecraft:overworld"), new BlockPos(x, 64, 0));
     }
 }

@@ -1,7 +1,7 @@
 package com.latchandlabel.client.data;
 
 import com.latchandlabel.client.model.Category;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.Objects;
@@ -30,7 +30,7 @@ public final class DefaultCategories {
         );
     }
 
-    private static ResourceLocation id(String value) {
-        return Objects.requireNonNull(ResourceLocation.tryParse(value), "Invalid identifier literal: " + value);
+    private static Identifier id(String value) {
+        return Objects.requireNonNull(Identifier.tryParse(value), "Invalid identifier literal: " + value);
     }
 }

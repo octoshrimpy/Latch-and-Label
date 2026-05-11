@@ -3,7 +3,7 @@ package com.latchandlabel.client.book;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 
@@ -13,10 +13,10 @@ public final class BookCommand {
 
     public static void registerSubcommands(LiteralArgumentBuilder<FabricClientCommandSource> parent) {
         parent
-                .then(ClientCommandManager.literal("export")
+                .then(ClientCommands.literal("export")
                         .executes(BookCommand::executeExport)
                 )
-                .then(ClientCommandManager.literal("import")
+                .then(ClientCommands.literal("import")
                         .executes(BookCommand::executeImport)
                 );
     }

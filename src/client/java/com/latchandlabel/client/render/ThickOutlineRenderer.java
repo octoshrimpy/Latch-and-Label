@@ -9,7 +9,7 @@ public final class ThickOutlineRenderer {
     }
 
     public static void drawThickOutline(
-            PoseStack matrices,
+            PoseStack.Pose pose,
             VertexConsumer consumer,
             AABB box,
             float thickness,
@@ -27,26 +27,26 @@ public final class ThickOutlineRenderer {
         double maxZ = box.maxZ;
 
         // Vertical edges
-        drawPrism(matrices, consumer, minX - t, minY, minZ - t, minX + t, maxY, minZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, maxX - t, minY, minZ - t, maxX + t, maxY, minZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, minX - t, minY, maxZ - t, minX + t, maxY, maxZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, maxX - t, minY, maxZ - t, maxX + t, maxY, maxZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX - t, minY, minZ - t, minX + t, maxY, minZ + t, r, g, b, a);
+        drawPrism(pose, consumer, maxX - t, minY, minZ - t, maxX + t, maxY, minZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX - t, minY, maxZ - t, minX + t, maxY, maxZ + t, r, g, b, a);
+        drawPrism(pose, consumer, maxX - t, minY, maxZ - t, maxX + t, maxY, maxZ + t, r, g, b, a);
 
         // Bottom edges
-        drawPrism(matrices, consumer, minX, minY - t, minZ - t, maxX, minY + t, minZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, minX, minY - t, maxZ - t, maxX, minY + t, maxZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, minX - t, minY - t, minZ, minX + t, minY + t, maxZ, r, g, b, a);
-        drawPrism(matrices, consumer, maxX - t, minY - t, minZ, maxX + t, minY + t, maxZ, r, g, b, a);
+        drawPrism(pose, consumer, minX, minY - t, minZ - t, maxX, minY + t, minZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX, minY - t, maxZ - t, maxX, minY + t, maxZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX - t, minY - t, minZ, minX + t, minY + t, maxZ, r, g, b, a);
+        drawPrism(pose, consumer, maxX - t, minY - t, minZ, maxX + t, minY + t, maxZ, r, g, b, a);
 
         // Top edges
-        drawPrism(matrices, consumer, minX, maxY - t, minZ - t, maxX, maxY + t, minZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, minX, maxY - t, maxZ - t, maxX, maxY + t, maxZ + t, r, g, b, a);
-        drawPrism(matrices, consumer, minX - t, maxY - t, minZ, minX + t, maxY + t, maxZ, r, g, b, a);
-        drawPrism(matrices, consumer, maxX - t, maxY - t, minZ, maxX + t, maxY + t, maxZ, r, g, b, a);
+        drawPrism(pose, consumer, minX, maxY - t, minZ - t, maxX, maxY + t, minZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX, maxY - t, maxZ - t, maxX, maxY + t, maxZ + t, r, g, b, a);
+        drawPrism(pose, consumer, minX - t, maxY - t, minZ, minX + t, maxY + t, maxZ, r, g, b, a);
+        drawPrism(pose, consumer, maxX - t, maxY - t, minZ, maxX + t, maxY + t, maxZ, r, g, b, a);
     }
 
     private static void drawPrism(
-            PoseStack matrices,
+            PoseStack.Pose pose,
             VertexConsumer consumer,
             double minX,
             double minY,
@@ -59,6 +59,6 @@ public final class ThickOutlineRenderer {
             float b,
             float a
     ) {
-        RenderBox.drawFilledBox(matrices, consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
+        RenderBox.drawFilledBox(pose, consumer, minX, minY, minZ, maxX, maxY, maxZ, r, g, b, a);
     }
 }
