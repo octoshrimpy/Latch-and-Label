@@ -1,13 +1,30 @@
 pluginManagement {
     repositories {
-        maven { url = "https://maven.fabricmc.net/" }
         mavenCentral()
         gradlePluginPortal()
+        maven { url = "https://maven.fabricmc.net/" }
+        maven {
+            url = "https://maven.kikugie.dev/releases"
+            name = "KikuGie Releases"
+        }
+        maven {
+            url = "https://maven.kikugie.dev/snapshots"
+            name = "KikuGie Snapshots"
+        }
     }
 }
 
 plugins {
+    id 'dev.kikugie.stonecutter' version '0.9.3'
+    id 'dev.kikugie.loom-back-compat' version '0.2'
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+stonecutter {
+    create(rootProject) {
+        versions "26.1.2", "26.2-snapshot-6"
+        vcsVersion = "26.2-snapshot-6"
+    }
 }
 
 rootProject.name = "latch-and-label"

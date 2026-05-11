@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "latchlabel",
+  "id": "${id}",
   "version": "${version}",
-  "name": "Latch & Label",
+  "name": "${name}",
   "description": "Client-side chest tagging and find tools.",
   "authors": [
     "Latch & Label"
@@ -24,7 +24,7 @@
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
-    "minecraft": ">=26.2-",
+    "minecraft": "${minecraft_dep}",
     "java": ">=25",
     "fabric-api": "*"
   }

@@ -1,14 +1,13 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'dev.kikugie.loom-back-compat'
     id 'maven-publish'
 }
 
-def mcVersionSuffix = (findProperty("mc_version_suffix") ?: "").toString().trim()
-version = mcVersionSuffix.isEmpty() ? project.mod_version : "${project.mod_version}+${mcVersionSuffix}"
-group = project.maven_group
+version = "${property('mod.version')}+${stonecutter.current.version}"
+group = property('mod.group')
 
 base {
-    archivesName = project.archives_base_name
+    archivesName = property('mod.id')
 }
 
 repositories {
@@ -18,15 +17,14 @@ repositories {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    minecraft "com.mojang:minecraft:${stonecutter.current.version}"
+    loomx.applyMojangMappings()
 
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "net.fabricmc:fabric-loader:${property('deps.fabric_loader')}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${property('deps.fabric_api')}"
 
     // Optional integration: only used when ModMenu is present.
-    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    // localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "com.terraformersmc:modmenu:${property('deps.modmenu')}"
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
@@ -41,12 +39,24 @@ loom {
             sourceSet sourceSets.client
         }
     }
+
+    runConfigs.all {
+        runDir = "../../run"
+    }
 }
 
 sourceSets {
     client {
-        java.srcDirs = ['src/client/java']
-        resources.srcDirs = ['src/client/resources']
+        java.srcDirs = [
+            rootProject.file('src/client/java'),
+            project.file('src/client/java'),
+            project.file('build/generated/stonecutter/client/java')
+        ]
+        resources.srcDirs = [
+            rootProject.file('src/client/resources'),
+            project.file('src/client/resources'),
+            project.file('build/generated/stonecutter/client/resources')
+        ]
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
     }
@@ -68,25 +78,26 @@ java {
 }
 
 processResources {
-    inputs.property "version", project.version
-    inputs.property "loader_version", project.loader_version
+    def props = [
+        id: project.property('mod.id'),
+        name: project.property('mod.name'),
+        version: project.version,
+        minecraft_dep: project.property('mod.mc_compat'),
+        loader_version: project.property('deps.fabric_loader')
+    ]
+    props.each { k, v -> inputs.property(k, v.toString()) }
 
-    filesMatching("fabric.mod.json") {
-        expand(
-                "version": project.version,
-                "loader_version": project.loader_version
-        )
-    }
+    filesMatching("fabric.mod.json") { expand(props) }
+    filesMatching("*.mixins.json") { expand(mixin_compat: "JAVA_25") }
 }
 
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
-            artifactId = project.archives_base_name
+            artifactId = property('mod.id')
             from components.java
         }
     }
-
     repositories {
         // Add your publish target here.
     }

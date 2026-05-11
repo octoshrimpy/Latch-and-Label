@@ -1,0 +1,12 @@
+plugins {
+    id 'dev.kikugie.stonecutter'
+}
+
+stonecutter.active "26.2-snapshot-6"
+
+// See https://stonecutter.kikugie.dev/wiki/config/params
+stonecutter.parameters {
+    swaps["mod_version"] = ("\"" + property('mod.version') + "\";").toString()
+    swaps["minecraft"] = ("\"" + node.metadata.version + "\";").toString()
+    constants["release"] = property('mod.id') != "template"
+}
