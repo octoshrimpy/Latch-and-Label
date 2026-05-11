@@ -1,12 +1,12 @@
 package com.latchandlabel.client.targeting;
 
 import com.latchandlabel.client.model.ChestKey;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.Optional;
 
@@ -15,8 +15,8 @@ public final class ContainerTargeting {
     private ContainerTargeting() {
     }
 
-    public static Optional<ChestKey> getTargetedContainer(MinecraftClient client) {
-        if (client == null || client.world == null) {
+    public static Optional<ChestKey> getTargetedContainer(Minecraft client) {
+        if (client == null || client.level == null) {
             return Optional.empty();
         }
 
@@ -25,7 +25,7 @@ public final class ContainerTargeting {
             return Optional.empty();
         }
 
-        World world = client.world;
+        Level world = client.level;
         BlockPos pos = blockHitResult.getBlockPos();
         BlockEntity blockEntity = world.getBlockEntity(pos);
 

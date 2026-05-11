@@ -1,20 +1,20 @@
 package com.latchandlabel.client.ui;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.GuiGraphics;
+// TODO: verify Click package after ./gradlew genSources — was net.minecraft.client.gui.Click in 1.21.11
 import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -64,27 +64,29 @@ public final class CategoryItemMappingScreen extends Screen {
     private final Screen parent;
     private final String categoryId;
     private Category fallbackCategory;
-    private final List<Identifier> filteredItemIds = new ArrayList<>();
-    private final Map<Identifier, List<String>> itemTagSearchCache = new HashMap<>();
-    private final Identifier airItemId = Registries.ITEM.getId(Items.AIR);
-    private TextFieldWidget nameField;
-    private TextFieldWidget searchField;
-    private Text headerTitle;
+    private final List<ResourceLocation> filteredItemIds = new ArrayList<>();
+    private final Map<ResourceLocation, List<String>> itemTagSearchCache = new HashMap<>();
+    private final ResourceLocation airItemId = BuiltInRegistries.ITEM.getKey(Items.AIR).location();
+    private EditBox nameField;
+    private EditBox searchField;
+    private Button categoryFilterButton;
+    private Component headerTitle;
     private int pageIndex;
     private int selectedColor;
-    private Identifier selectedIconItemId;
+    private ResourceLocation selectedIconItemId;
     private boolean colorPickerOpen;
     private boolean deleteConfirmOpen;
     private boolean categoryDeleted;
+    private boolean showOnlyCategoryItems;
 
     public CategoryItemMappingScreen(Screen parent, Category category) {
-        super(Text.translatable("screen.latchlabel.category_items.title", category.name()));
+        super(Component.translatable("screen.latchlabel.category_items.title", category.name()));
         this.parent = parent;
         this.categoryId = category.id();
         this.fallbackCategory = category;
         this.selectedColor = category.color();
         this.selectedIconItemId = category.iconItemId();
-        this.headerTitle = Text.translatable("screen.latchlabel.category_items.title", category.name());
+        this.headerTitle = Component.translatable("screen.latchlabel.category_items.title", category.name());
     }
 
     @Override
@@ -94,38 +96,50 @@ public final class CategoryItemMappingScreen extends Screen {
         Category active = activeCategory();
         selectedColor = active.color();
         selectedIconItemId = active.iconItemId();
-        headerTitle = Text.translatable("screen.latchlabel.category_items.title", active.name());
+        headerTitle = Component.translatable("screen.latchlabel.category_items.title", active.name());
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
         int panelTop = (height - PANEL_HEIGHT) / 2;
 
         int nameFieldLeft = panelLeft + 10 + ICON_BUTTON_SIZE + ICON_COLOR_GAP + COLOR_BUTTON_SIZE + 6;
-        int nameFieldWidth = PANEL_WIDTH - 20 - ICON_BUTTON_SIZE - ICON_COLOR_GAP - COLOR_BUTTON_SIZE - 6;
-        nameField = new TextFieldWidget(textRenderer, nameFieldLeft, panelTop + 22, nameFieldWidth, 18, Text.empty());
+        int nameFieldWidth = Math.max(20, PANEL_WIDTH - 20 - ICON_BUTTON_SIZE - ICON_COLOR_GAP - COLOR_BUTTON_SIZE - 6);
+        nameField = new EditBox(textRenderer, nameFieldLeft, panelTop + 22, nameFieldWidth, 18, .Component.empty());
         nameField.setText(active.name());
         nameField.setMaxLength(48);
         nameField.setChangedListener(this::onNameChanged);
         addDrawableChild(nameField);
 
-        searchField = new TextFieldWidget(textRenderer, panelLeft + 10, panelTop + 46, PANEL_WIDTH - 20, 18, Text.empty());
+        searchField = new EditBox(textRenderer, panelLeft + 10, panelTop + 46, PANEL_WIDTH - 20, 18, .Component.empty());
         searchField.setChangedListener(value -> refilter());
         searchField.setMaxLength(80);
         addDrawableChild(searchField);
         setInitialFocus(searchField);
         searchField.setFocused(true);
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable("gui.back"), button -> close())
+        int gridTop = panelTop + 72;
+        int gridWidth = GRID_COLUMNS * SLOT_SIZE;
+        int gridLeft = panelLeft + (PANEL_WIDTH - gridWidth) / 2;
+        int filterButtonLeft = gridLeft + gridWidth + 8;
+        categoryFilterButton = addDrawableChild(Button.builder(categoryFilterText(), button -> {
+                    showOnlyCategoryItems = !showOnlyCategoryItems;
+                    refilter();
+                    refreshCategoryFilterButton();
+                })
+                .dimensions(filterButtonLeft, gridTop, 88, 18)
+                .build());
+
+        addDrawableChild(Button.builder(Component.translatable("gui.back"), button -> close())
                 .dimensions(panelLeft + 10, panelTop + PANEL_HEIGHT - 24, 60, 16)
                 .build());
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable("screen.latchlabel.category_items.delete"), button -> {
+        addDrawableChild(Button.builder(Component.translatable("screen.latchlabel.category_items.delete"), button -> {
                     colorPickerOpen = false;
                     deleteConfirmOpen = true;
                 })
                 .dimensions(panelLeft + 76, panelTop + PANEL_HEIGHT - 24, 70, 16)
                 .build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> {
+        addDrawableChild(Button.builder(Component.literal("<"), button -> {
                     if (pageIndex > 0) {
                         pageIndex--;
                     }
@@ -133,7 +147,7 @@ public final class CategoryItemMappingScreen extends Screen {
                 .dimensions(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24, 20, 16)
                 .build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
+        addDrawableChild(Button.builder(Component.literal(">"), button -> {
                     int maxPage = maxPageIndex();
                     if (pageIndex < maxPage) {
                         pageIndex++;
@@ -156,7 +170,7 @@ public final class CategoryItemMappingScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
@@ -181,11 +195,11 @@ public final class CategoryItemMappingScreen extends Screen {
 
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
         context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
-        context.drawTextWithShadow(textRenderer, headerTitle, panelLeft + 10, panelTop + 8, 0xFFFFFFFF);
+        context.drawString(textRenderer, headerTitle, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
         context.fill(iconButtonLeft, iconButtonTop, iconButtonLeft + ICON_BUTTON_SIZE, iconButtonTop + ICON_BUTTON_SIZE, 0xCC2A2A2A);
         context.drawStrokedRectangle(iconButtonLeft, iconButtonTop, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, iconHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
-        if (selectedIconItemId != null && Registries.ITEM.containsId(selectedIconItemId)) {
-            context.drawItem(new ItemStack(Registries.ITEM.get(selectedIconItemId)), iconButtonLeft + 1, iconButtonTop + 1);
+        if (selectedIconItemId != null && BuiltInRegistries.ITEM.containsKey(selectedIconItemId)) {
+            context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(selectedIconItemId)), iconButtonLeft + 1, iconButtonTop + 1);
         }
         context.fill(colorButtonLeft, colorButtonTop, colorButtonLeft + COLOR_BUTTON_SIZE, colorButtonTop + COLOR_BUTTON_SIZE, colorValue);
         context.drawStrokedRectangle(colorButtonLeft, colorButtonTop, COLOR_BUTTON_SIZE, COLOR_BUTTON_SIZE, colorHovered ? 0xFFFFFFFF : 0xFF5A5A5A);
@@ -196,34 +210,34 @@ public final class CategoryItemMappingScreen extends Screen {
         int interactionMouseY = suppressUnderlyingHover ? Integer.MIN_VALUE : mouseY;
         super.render(context, interactionMouseX, interactionMouseY, delta);
 
-        Identifier hoveredItemId = null;
+        ResourceLocation hoveredItemId = null;
         if (!deleteConfirmOpen) {
             int start = pageIndex * PAGE_SIZE;
             int end = Math.min(filteredItemIds.size(), start + PAGE_SIZE);
             for (int i = start; i < end; i++) {
                 int slotIndex = i - start;
-                Identifier itemId = filteredItemIds.get(i);
+                ResourceLocation itemId = filteredItemIds.get(i);
                 if (drawSlot(context, gridLeft, gridTop, slotIndex, itemId, interactionMouseX, interactionMouseY)) {
                     hoveredItemId = itemId;
                 }
             }
         }
 
-        List<Text> hoveredTooltipLines = null;
+        List<Component> hoveredTooltipLines = null;
         if (!deleteConfirmOpen && hoveredItemId != null) {
-            ItemStack hoveredStack = new ItemStack(Registries.ITEM.get(hoveredItemId));
+            ItemStack hoveredStack = new ItemStack(BuiltInRegistries.ITEM.get(hoveredItemId));
             hoveredTooltipLines = new ArrayList<>();
             hoveredTooltipLines.add(hoveredStack.getName());
 
             boolean mappedToCurrent = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(hoveredItemId, categoryId);
-            if (!mappedToCurrent && isShiftDown()) {
+            if (!mappedToCurrent && ClientInputHandler.isShiftDown()) {
                 Optional<Category> mappedCategory = LatchLabelClientState.itemCategoryMappingService()
                         .categoryIdFor(hoveredItemId)
                         .flatMap(LatchLabelClientState.categoryStore()::getById);
                 if (mappedCategory.isPresent()) {
                     Category category = mappedCategory.get();
                     hoveredTooltipLines.add(
-                            Text.translatable("latchlabel.tooltip.category", category.name())
+                            Component.translatable("latchlabel.tooltip.category", category.name())
                                     .setStyle(Style.EMPTY.withColor(category.color()))
                     );
                 }
@@ -307,13 +321,16 @@ public final class CategoryItemMappingScreen extends Screen {
         }
 
         Category active = activeCategory();
-        Identifier itemId = filteredItemIds.get(itemIndex);
+        ResourceLocation itemId = filteredItemIds.get(itemIndex);
         LatchLabelClientState.itemCategoryMappingService().toggleCategoryMembership(itemId, categoryId);
+        if (showOnlyCategoryItems) {
+            refilter();
+        }
         if (client != null && client.inGameHud != null) {
             boolean on = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(itemId, categoryId);
-            Text message = on
-                    ? Text.translatable("latchlabel.mapping.added", itemId.toString(), active.name())
-                    : Text.translatable("latchlabel.mapping.removed", itemId.toString());
+            Component message = on
+                    ? Component.translatable("latchlabel.mapping.added", itemId.toString(), active.name())
+                    : Component.translatable("latchlabel.mapping.removed", itemId.toString());
             client.inGameHud.setOverlayMessage(message, false);
         }
         return true;
@@ -366,21 +383,24 @@ public final class CategoryItemMappingScreen extends Screen {
         String normalizedTagQuery = tagQuery ? query.substring(1) : query;
 
         filteredItemIds.clear();
-        for (Identifier itemId : Registries.ITEM.getIds()) {
+        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null || itemId.equals(airItemId)) {
                 continue;
             }
             if (!matchesSearchQuery(itemId, query, normalizedTagQuery, tagQuery)) {
                 continue;
             }
+            if (showOnlyCategoryItems && !LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(itemId, categoryId)) {
+                continue;
+            }
             filteredItemIds.add(itemId);
         }
 
-        filteredItemIds.sort(Comparator.comparing(Identifier::toString));
+        filteredItemIds.sort(Comparator.comparing(ResourceLocation::toString));
         pageIndex = 0;
     }
 
-    private boolean matchesSearchQuery(Identifier itemId, String query, String normalizedTagQuery, boolean tagQuery) {
+    private boolean matchesSearchQuery(ResourceLocation itemId, String query, String normalizedTagQuery, boolean tagQuery) {
         if (query.isEmpty()) {
             return true;
         }
@@ -397,12 +417,12 @@ public final class CategoryItemMappingScreen extends Screen {
         return false;
     }
 
-    private List<String> itemTagIds(Identifier itemId) {
+    private List<String> itemTagIds(ResourceLocation itemId) {
         return itemTagSearchCache.computeIfAbsent(itemId, id -> {
-            if (!Registries.ITEM.containsId(id)) {
+            if (!BuiltInRegistries.ITEM.containsKey(id)) {
                 return List.of();
             }
-            ItemStack stack = new ItemStack(Registries.ITEM.get(id));
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
             return stack.getRegistryEntry()
                     .streamTags()
                     .map(tagKey -> tagKey.id().toString().toLowerCase(Locale.ROOT))
@@ -411,7 +431,7 @@ public final class CategoryItemMappingScreen extends Screen {
         });
     }
 
-    private boolean drawSlot(DrawContext context, int gridLeft, int gridTop, int slotIndex, Identifier itemId, int mouseX, int mouseY) {
+    private boolean drawSlot(GuiGraphics context, int gridLeft, int gridTop, int slotIndex, ResourceLocation itemId, int mouseX, int mouseY) {
         Category active = activeCategory();
         int col = slotIndex % GRID_COLUMNS;
         int row = slotIndex / GRID_COLUMNS;
@@ -429,7 +449,7 @@ public final class CategoryItemMappingScreen extends Screen {
         context.fill(x, y, right, bottom, baseBackground);
         context.drawStrokedRectangle(x, y, SLOT_SIZE, SLOT_SIZE, mapped ? 0xFFFFFFFF : 0xFF5A5A5A);
 
-        context.drawItem(new ItemStack(Registries.ITEM.get(itemId)), x + 1, y + 1);
+        context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(itemId)), x + 1, y + 1);
         if (!mapped) {
             context.fill(x + 1, y + 1, right - 1, bottom - 1, 0x40000000);
         }
@@ -460,7 +480,7 @@ public final class CategoryItemMappingScreen extends Screen {
         return row * GRID_COLUMNS + col;
     }
 
-    private void drawColorPicker(DrawContext context, int left, int top, int mouseX, int mouseY) {
+    private void drawColorPicker(GuiGraphics context, int left, int top, int mouseX, int mouseY) {
         int rows = (int) Math.ceil((double) COLOR_PALETTE.length / COLOR_SWATCH_COLUMNS);
         int pickerWidth = (COLOR_SWATCH_COLUMNS * COLOR_SWATCH_SIZE) + ((COLOR_SWATCH_COLUMNS - 1) * COLOR_SWATCH_GAP) + 8;
         int pickerHeight = (rows * COLOR_SWATCH_SIZE) + ((rows - 1) * COLOR_SWATCH_GAP) + 8;
@@ -525,15 +545,15 @@ public final class CategoryItemMappingScreen extends Screen {
 
         int normalizedColor = selectedColor & 0x00FFFFFF;
         selectedColor = normalizedColor;
-        Identifier iconItemId = selectedIconItemId;
-        if (iconItemId == null || !Registries.ITEM.containsId(iconItemId)) {
+        ResourceLocation iconItemId = selectedIconItemId;
+        if (iconItemId == null || !BuiltInRegistries.ITEM.containsKey(iconItemId)) {
             iconItemId = activeCategory().iconItemId();
         }
         selectedIconItemId = iconItemId;
         LatchLabelClientState.categoryStore().updateCategoryDetails(categoryId, normalizedName, normalizedColor, iconItemId);
 
         Category active = activeCategory();
-        headerTitle = Text.translatable("screen.latchlabel.category_items.title", active.name());
+        headerTitle = Component.translatable("screen.latchlabel.category_items.title", active.name());
     }
 
     private void updateHeaderPreview(String rawName) {
@@ -541,7 +561,7 @@ public final class CategoryItemMappingScreen extends Screen {
         if (previewName.isEmpty()) {
             previewName = activeCategory().name();
         }
-        headerTitle = Text.translatable("screen.latchlabel.category_items.title", previewName);
+        headerTitle = Component.translatable("screen.latchlabel.category_items.title", previewName);
     }
 
     private Category activeCategory() {
@@ -551,6 +571,18 @@ public final class CategoryItemMappingScreen extends Screen {
                     return category;
                 })
                 .orElse(fallbackCategory);
+    }
+
+    private Component categoryFilterText() {
+        return Component.translatable(showOnlyCategoryItems
+                ? "screen.latchlabel.category_items.filter_category"
+                : "screen.latchlabel.category_items.filter_all");
+    }
+
+    private void refreshCategoryFilterButton() {
+        if (categoryFilterButton != null) {
+            categoryFilterButton.setMessage(categoryFilterText());
+        }
     }
 
     private static boolean isWithin(double mouseX, double mouseY, int left, int top, int right, int bottom) {
@@ -602,7 +634,7 @@ public final class CategoryItemMappingScreen extends Screen {
         return true;
     }
 
-    private void drawDeleteConfirmDialog(DrawContext context, int mouseX, int mouseY) {
+    private void drawDeleteConfirmDialog(GuiGraphics context, int mouseX, int mouseY) {
         context.getMatrices().pushMatrix();
         context.fill(0, 0, width, height, 0xA0000000);
 
@@ -613,8 +645,8 @@ public final class CategoryItemMappingScreen extends Screen {
         context.fill(boxLeft, boxTop, boxRight, boxBottom, 0xFF101010);
         context.drawStrokedRectangle(boxLeft, boxTop, DELETE_CONFIRM_WIDTH, DELETE_CONFIRM_HEIGHT, 0xFF5A5A5A);
 
-        Text confirmText = Text.translatable("screen.latchlabel.category_items.delete_confirm", activeCategory().name());
-        context.drawTextWithShadow(textRenderer, confirmText, boxLeft + 10, boxTop + 14, 0xFFFFFFFF);
+        Component confirmText = Component.translatable("screen.latchlabel.category_items.delete_confirm", activeCategory().name());
+        context.drawString(textRenderer, confirmText, boxLeft + 10, boxTop + 14, 0xFFFFFFFF, true);
 
         int buttonY = boxTop + DELETE_CONFIRM_HEIGHT - 26;
         int cancelX = boxLeft + DELETE_CONFIRM_WIDTH - DELETE_CONFIRM_BUTTON_WIDTH - 10;
@@ -624,20 +656,18 @@ public final class CategoryItemMappingScreen extends Screen {
 
         context.fill(deleteX, buttonY, deleteX + DELETE_CONFIRM_BUTTON_WIDTH, buttonY + DELETE_CONFIRM_BUTTON_HEIGHT, deleteHovered ? 0xFFB02E26 : 0xFF8E2620);
         context.drawStrokedRectangle(deleteX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer, Text.translatable("screen.latchlabel.category_items.delete"), deleteX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Component.translatable("screen.latchlabel.category_items.delete"), deleteX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
 
         context.fill(cancelX, buttonY, cancelX + DELETE_CONFIRM_BUTTON_WIDTH, buttonY + DELETE_CONFIRM_BUTTON_HEIGHT, cancelHovered ? 0xFF4A4A4A : 0xFF353535);
         context.drawStrokedRectangle(cancelX, buttonY, DELETE_CONFIRM_BUTTON_WIDTH, DELETE_CONFIRM_BUTTON_HEIGHT, 0xFFFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer, Text.translatable("gui.cancel"), cancelX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Component.translatable("gui.cancel"), cancelX + (DELETE_CONFIRM_BUTTON_WIDTH / 2), buttonY + 5, 0xFFFFFFFF);
         context.getMatrices().popMatrix();
     }
 
     private void deleteCategoryAndClose() {
         deleteConfirmOpen = false;
         String deletedCategoryName = activeCategory().name();
-        LatchLabelClientState.itemCategoryMappingService().clearCategoryReferences(categoryId);
-        LatchLabelClientState.tagStore().clearCategoryReferences(categoryId);
-        boolean deleted = LatchLabelClientState.categoryStore().deleteCategory(categoryId);
+        boolean deleted = LatchLabelClientState.categoryLifecycleService().deleteCategoryWithCascade(categoryId);
         if (!deleted) {
             return;
         }
@@ -646,7 +676,7 @@ public final class CategoryItemMappingScreen extends Screen {
         if (client != null) {
             if (client.inGameHud != null) {
             client.inGameHud.setOverlayMessage(
-                    Text.translatable("latchlabel.category.deleted", deletedCategoryName),
+                    Component.translatable("latchlabel.category.deleted", deletedCategoryName),
                     false
             );
             }
@@ -654,12 +684,4 @@ public final class CategoryItemMappingScreen extends Screen {
         }
     }
 
-    private static boolean isShiftDown() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getWindow() == null) {
-            return false;
-        }
-        return InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
-                || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
-    }
 }

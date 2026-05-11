@@ -15,6 +15,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -89,7 +90,6 @@ public final class ConfigProfileManager {
     private void flushAll() {
         LatchLabelClientState.clientConfigManager().flushNow();
         LatchLabelClientState.dataManager().flushNow();
-        LatchLabelClientState.itemCategoryMappingService().flushNow();
     }
 
     private void reloadAll() {
@@ -203,10 +203,20 @@ public final class ConfigProfileManager {
             throw new IllegalStateException("Unable to create directory for " + path, e);
         }
 
-        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+        try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed writing JSON: " + path, e);
+            throw new IllegalStateException("Failed writing JSON to temp file: " + tmp, e);
+        }
+        try {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+            try {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed renaming temp file to: " + path, e);
+            }
         }
     }
 }

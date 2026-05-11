@@ -1,10 +1,11 @@
 package com.latchandlabel.client.book;
 
+import com.latchandlabel.client.LatchLabelClientState;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 public final class BookCommand {
     private BookCommand() {
@@ -21,8 +22,13 @@ public final class BookCommand {
     }
 
     private static int executeExport(CommandContext<FabricClientCommandSource> context) {
-        MinecraftClient client = context.getSource().getClient();
-        BookExportImportService.ExportResult result = BookExportImportService.exportToHeldBook(client);
+        Minecraft client = context.getSource().getClient();
+        BookExportImportService.ExportResult result = BookExportImportService.exportToHeldBook(
+                client,
+                LatchLabelClientState.tagStore(),
+                LatchLabelClientState.categoryStore(),
+                LatchLabelClientState.itemCategoryMappingService()
+        );
         if (result.success()) {
             context.getSource().sendFeedback(result.message());
         } else {
@@ -32,8 +38,13 @@ public final class BookCommand {
     }
 
     private static int executeImport(CommandContext<FabricClientCommandSource> context) {
-        MinecraftClient client = context.getSource().getClient();
-        BookExportImportService.ImportResult result = BookExportImportService.importFromHeldBook(client);
+        Minecraft client = context.getSource().getClient();
+        BookExportImportService.ImportResult result = BookExportImportService.importFromHeldBook(
+                client,
+                LatchLabelClientState.tagStore(),
+                LatchLabelClientState.categoryStore(),
+                LatchLabelClientState.itemCategoryMappingService()
+        );
         if (result.success()) {
             context.getSource().sendFeedback(result.message());
         } else {

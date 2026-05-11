@@ -1,20 +1,21 @@
 package com.latchandlabel.client.find;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.StorageRenderShapeResolver;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Frustum;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.culling.Frustum;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -52,6 +53,9 @@ public final class FindHighlightRenderer {
     private static final float FOCUS_G = 0.85f;
     private static final float FOCUS_B = 0.20f;
 
+    // reused per render call; safe since FindHighlightRenderer.render is render-thread-only
+    private static final float[] RGB_SCRATCH = new float[3];
+
     private FindHighlightRenderer() {
     }
 
@@ -61,21 +65,21 @@ public final class FindHighlightRenderer {
             return;
         }
 
-        MatrixStack matrices = context.matrices();
-        VertexConsumerProvider consumers = context.consumers();
-        MinecraftClient client = MinecraftClient.getInstance();
+        PoseStack matrices = context.matrices();
+        MultiBufferSource consumers = context.consumers();
+        Minecraft client = Minecraft.getInstance();
         if (matrices == null || consumers == null || client == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
             return;
         }
-        World world = client.world;
+        Level world = client.level;
         if (world == null || client.player == null) {
             return;
         }
 
-        Vec3d cameraPos = client.gameRenderer.getCamera().getCameraPos();
+        Vec3 cameraPos = client.gameRenderer.getCamera().getCameraPos();
         double nearDistanceSq = LOD_NEAR_DISTANCE * LOD_NEAR_DISTANCE;
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
-        long frameParity = world.getTime() & 1L;
+        long frameParity = world.getGameTime() & 1L;
         Frustum frustum = context.worldRenderer().getCapturedFrustum();
         VertexConsumer fillConsumer = consumers.getBuffer(RenderLayerCompat.debugFilledBox());
 
@@ -93,17 +97,17 @@ public final class FindHighlightRenderer {
                 continue;
             }
 
-            Optional<Box> renderBox = StorageRenderShapeResolver.resolveBox(world, key);
+            Optional<AABB> renderBox = StorageRenderShapeResolver.resolveBox(world, key);
             if (renderBox.isEmpty()) {
                 continue;
             }
-            Box box = renderBox.get();
+            AABB box = renderBox.get();
             if (frustum != null && !frustum.isVisible(box.expand(FRUSTUM_MARGIN))) {
                 continue;
             }
 
-            Vec3d center = box.getCenter();
-            double distanceSq = client.player.squaredDistanceTo(center.x, center.y, center.z);
+            Vec3 center = box.getCenter();
+            double distanceSq = client.player.distanceToSqr(center.x, center.y, center.z);
             boolean focused = FindResultState.isFocused(match.chestKey()) || FindResultState.isFocused(key);
             if (!focused && distanceSq > midDistanceSq && (((key.hashCode() ^ (int) frameParity) & 1) != 0)) {
                 continue;
@@ -141,7 +145,7 @@ public final class FindHighlightRenderer {
                 break;
             }
 
-            Box box = candidate.box();
+            AABB box = candidate.box();
             float r = candidate.r();
             float g = candidate.g();
             float b = candidate.b();
@@ -182,7 +186,7 @@ public final class FindHighlightRenderer {
 
     private record RenderCandidate(
             ChestKey key,
-            Box box,
+            AABB box,
             double distanceSq,
             boolean focused,
             boolean shouldPulse,
@@ -198,17 +202,22 @@ public final class FindHighlightRenderer {
                 .or(() -> LatchLabelClientState.tagStore().getTag(normalizedKey))
                 .orElse(null);
         if (categoryId == null) {
-            return new float[]{POSSIBLE_FALLBACK_R, POSSIBLE_FALLBACK_G, POSSIBLE_FALLBACK_B};
+            RGB_SCRATCH[0] = POSSIBLE_FALLBACK_R;
+            RGB_SCRATCH[1] = POSSIBLE_FALLBACK_G;
+            RGB_SCRATCH[2] = POSSIBLE_FALLBACK_B;
+            return RGB_SCRATCH;
         }
-        return LatchLabelClientState.categoryStore()
-                .getById(categoryId)
-                .map(category -> {
-                    int color = category.color();
-                    float r = ((color >> 16) & 0xFF) / 255.0f;
-                    float g = ((color >> 8) & 0xFF) / 255.0f;
-                    float b = (color & 0xFF) / 255.0f;
-                    return new float[]{r, g, b};
-                })
-                .orElse(new float[]{POSSIBLE_FALLBACK_R, POSSIBLE_FALLBACK_G, POSSIBLE_FALLBACK_B});
+        Optional<Category> categoryOpt = LatchLabelClientState.categoryStore().getById(categoryId);
+        if (categoryOpt.isEmpty()) {
+            RGB_SCRATCH[0] = POSSIBLE_FALLBACK_R;
+            RGB_SCRATCH[1] = POSSIBLE_FALLBACK_G;
+            RGB_SCRATCH[2] = POSSIBLE_FALLBACK_B;
+            return RGB_SCRATCH;
+        }
+        int color = categoryOpt.get().color();
+        RGB_SCRATCH[0] = ((color >> 16) & 0xFF) / 255.0f;
+        RGB_SCRATCH[1] = ((color >> 8) & 0xFF) / 255.0f;
+        RGB_SCRATCH[2] = (color & 0xFF) / 255.0f;
+        return RGB_SCRATCH;
     }
 }

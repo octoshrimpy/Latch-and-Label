@@ -3,41 +3,61 @@ package com.latchandlabel.client.find;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.TrackableStorage;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Set;
 
 public final class NearbyChestScanner {
     private static final double REACH_DISTANCE_SQ = 4.5 * 4.5;
     private static final Deque<ChestKey> scanQueue = new ArrayDeque<>();
-    private static boolean autoCloseNext = false;
+    private static PendingOpen pendingOpen;
     private static int cooldownTicks = 0;
+    private static Query query = Query.none();
 
     private NearbyChestScanner() {
     }
 
-    public static void scheduleNearby(MinecraftClient client, int radius) {
+    public static void scheduleNearby(Minecraft client, int radius) {
+        scheduleNearby(client, radius, Query.none());
+    }
+
+    public static void scheduleNearby(Minecraft client, int radius, Item exactItem, Set<Item> variantItems) {
+        scheduleNearby(client, radius, Query.items(exactItem, variantItems));
+    }
+
+    public static void scheduleNearbyByCategory(Minecraft client, int radius, String categoryId) {
+        scheduleNearby(client, radius, Query.category(categoryId));
+    }
+
+    private static void scheduleNearby(Minecraft client, int radius, Query nextQuery) {
         if (!FindSettings.autoRefreshContents()) {
             return;
         }
-        if (client.world == null || client.player == null) {
+        if (client.level == null || client.player == null) {
             return;
         }
 
         scanQueue.clear();
-        World world = client.world;
-        PlayerEntity player = client.player;
+        pendingOpen = null;
+        query = nextQuery == null ? Query.none() : nextQuery;
+        Level world = client.level;
+        Player player = client.player;
         double maxDistanceSq = (double) radius * radius;
 
         int minChunkX = Math.floorDiv((int) Math.floor(player.getX() - radius), 16);
@@ -47,7 +67,7 @@ public final class NearbyChestScanner {
 
         for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
             for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!world.isChunkLoaded(chunkX, chunkZ)) {
+                if (!world.hasChunkAt(chunkX, chunkZ)) {
                     continue;
                 }
                 WorldChunk chunk = world.getChunk(chunkX, chunkZ);
@@ -56,7 +76,7 @@ public final class NearbyChestScanner {
                         continue;
                     }
                     BlockPos pos = blockEntity.getPos();
-                    if (player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > maxDistanceSq) {
+                    if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > maxDistanceSq) {
                         continue;
                     }
                     StorageKeyResolver.resolveForWorld(world, pos).ifPresent(key -> {
@@ -69,20 +89,37 @@ public final class NearbyChestScanner {
         }
     }
 
-    public static void onClientTick(MinecraftClient client) {
+    public static void onClientTick(Minecraft client) {
         if (!FindSettings.autoRefreshContents()) {
             return;
         }
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             return;
         }
 
-        if (autoCloseNext) {
-            if (client.currentScreen instanceof HandledScreen<?>) {
-                client.player.closeHandledScreen();
+        if (pendingOpen != null) {
+            if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+                if (openedScreenMatches(client, pendingOpen.target())) {
+                    boolean matched = screenContainsQuery(client);
+                    if (matched) {
+                        pendingOpen = null;
+                        scanQueue.clear();
+                        cooldownTicks = 0;
+                        return;
+                    }
+
+                    client.player.closeContainer();
+                    pendingOpen = null;
+                    cooldownTicks = 2;
+                    return;
+                }
             }
-            autoCloseNext = false;
-            cooldownTicks = 2;
+            if (pendingOpen.remainingTicks() <= 0) {
+                pendingOpen = null;
+                cooldownTicks = 2;
+                return;
+            }
+            pendingOpen = pendingOpen.withRemainingTicks(pendingOpen.remainingTicks() - 1);
             return;
         }
 
@@ -101,7 +138,7 @@ public final class NearbyChestScanner {
             if (candidate == null) {
                 continue;
             }
-            if (!candidate.dimensionId().equals(client.world.getRegistryKey().getValue())) {
+            if (!candidate.dimensionId().equals(client.level.dimension().location())) {
                 continue;
             }
             if (isWithinReach(client.player, candidate)) {
@@ -116,17 +153,82 @@ public final class NearbyChestScanner {
 
         BlockPos pos = next.pos();
         BlockHitResult hitResult = new BlockHitResult(
-                Vec3d.ofCenter(pos),
+                Vec3.ofCenter(pos),
                 Direction.UP,
                 pos,
                 false
         );
-        client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
-        autoCloseNext = true;
+        client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
+        pendingOpen = new PendingOpen(next, 20);
     }
 
-    private static boolean isWithinReach(PlayerEntity player, ChestKey key) {
+    private static boolean isWithinReach(Player player, ChestKey key) {
         BlockPos pos = key.pos();
-        return player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= REACH_DISTANCE_SQ;
+        return player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= REACH_DISTANCE_SQ;
+    }
+
+    private static boolean openedScreenMatches(Minecraft client, ChestKey expected) {
+        return com.latchandlabel.client.tagging.ContainerScreenContextResolver.resolve(client, client.currentScreen)
+                .filter(expected::equals)
+                .isPresent();
+    }
+
+    private static boolean screenContainsQuery(Minecraft client) {
+        if (query.isNone()) {
+            return false;
+        }
+
+        AbstractContainerMenu handler = client.player.containerMenu;
+        for (var slot : handler.slots) {
+            if (slot.inventory instanceof Container) {
+                continue;
+            }
+
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (query.matches(stack)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private record PendingOpen(ChestKey target, int remainingTicks) {
+        private PendingOpen withRemainingTicks(int ticks) {
+            return new PendingOpen(target, ticks);
+        }
+    }
+
+    private record Query(Item exactItem, Set<Item> variantItems, String categoryId) {
+        private static Query none() {
+            return new Query(null, Set.of(), null);
+        }
+
+        private static Query items(Item exactItem, Set<Item> variantItems) {
+            return new Query(exactItem, variantItems == null ? Set.of() : Set.copyOf(variantItems), null);
+        }
+
+        private static Query category(String categoryId) {
+            return new Query(null, Set.of(), categoryId);
+        }
+
+        private boolean isNone() {
+            return exactItem == null && variantItems.isEmpty() && (categoryId == null || categoryId.isBlank());
+        }
+
+        private boolean matches(ItemStack stack) {
+            if (exactItem != null && stack.getItem() == exactItem) {
+                return true;
+            }
+            if (variantItems.contains(stack.getItem())) {
+                return true;
+            }
+            return categoryId != null && com.latchandlabel.client.LatchLabelClientState.itemCategoryMappingService()
+                    .categoryIdFor(stack)
+                    .filter(categoryId::equals)
+                    .isPresent();
+        }
     }
 }

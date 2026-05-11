@@ -1,28 +1,34 @@
 package com.latchandlabel.client.ui;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
 
 import java.util.Optional;
+import java.util.OptionalInt;
+import com.latchandlabel.client.find.FindResultState;
 
 public final class SlotBackgroundRenderer {
     private SlotBackgroundRenderer() {
     }
 
-    public static void renderSlot(HandledScreen<?> handledScreen, DrawContext context, Slot slot) {
-        ItemStack stack = slot.getStack();
+    public static void renderSlot(AbstractContainerScreen<?> handledScreen, GuiGraphics context, Slot slot) {
+        ItemStack stack = slot.getItem();
         if (stack.isEmpty()) {
             return;
         }
 
-        boolean inspectDown = isInspectDown();
+        OptionalInt findHighlightColor = FindResultState.slotHighlightColor(stack);
+        if (findHighlightColor.isPresent()) {
+            context.fill(slot.x, slot.y, slot.x + 16, slot.y + 16, findHighlightColor.getAsInt());
+            return;
+        }
+
+        boolean inspectDown = ClientInputHandler.isShiftDown() || ClientInputHandler.isAltDown();
         Optional<Category> activeCategoryOpt = inspectDown
                 ? Optional.empty()
                 : ContainerTagButtonManager.activeCategoryFor(handledScreen);
@@ -55,16 +61,4 @@ public final class SlotBackgroundRenderer {
         context.fill(left, top, left + 16, top + 16, color);
     }
 
-    private static boolean isInspectDown() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getWindow() == null) {
-            return false;
-        }
-
-        boolean shiftDown = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
-                || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
-        boolean altDown = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
-                || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT);
-        return shiftDown || altDown;
-    }
 }

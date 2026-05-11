@@ -1,55 +1,67 @@
 package com.latchandlabel.client.inspect;
 
+import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.ContainerTargeting;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.text.Text;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Optional;
 
+// TODO: After ./gradlew genSources, verify:
+//  1. HudElementRegistry.attachElementBefore() exact signature and DeltaTracker/RenderTickCounter param type
+//  2. GuiGraphics.guiWidth() / guiHeight() vs getScaledWindowWidth() / getScaledWindowHeight()
+//  3. client.font vs client.font
+//  4. VanillaHudElements import package
+
 public final class FocusedTagBillboardRenderer {
+    private static final int NORMAL_TEXT_COLOR = 0xFFFFFFFF;
+    private static final int FULL_STORAGE_TEXT_COLOR = 0xFFFFD54A;
+
     private FocusedTagBillboardRenderer() {
     }
 
     public static void registerHud() {
-        HudRenderCallback.EVENT.register(FocusedTagBillboardRenderer::renderHud);
+        HudElementRegistry.attachElementBefore(
+                VanillaHudElements.CHAT,
+                ResourceLocation.fromNamespaceAndPath(LatchLabel.MOD_ID, "focused_tag_billboard"),
+                (context, tickCounter) -> renderHud(context)
+        );
     }
 
-    public static void renderWorld(WorldRenderContext context) {
-        // Intentionally no-op: removed focused face marker cube.
-    }
-
-    private static void renderHud(DrawContext context, RenderTickCounter tickCounter) {
+    private static void renderHud(GuiGraphics context) {
         if (!ClientInputHandler.isInspectModeActive()) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         FocusedCategory focused = resolveFocusedCategory(client);
         if (focused == null) {
             return;
         }
 
-        Text text = Text.literal(focused.category.name());
-        int x = (context.getScaledWindowWidth() / 2) - (client.textRenderer.getWidth(text) / 2);
-        int y = (context.getScaledWindowHeight() / 2) + 20;
-        context.drawTextWithShadow(client.textRenderer, text, x, y, 0xFFFFFFFF);
+        Component text = Component.literal(focused.displayName());
+        // TODO: verify guiWidth/guiHeight method names in GuiGraphics 26.2
+        int x = (context.guiWidth() / 2) - (client.font.width(text) / 2);
+        int y = (context.guiHeight() / 2) + 20;
+        int color = focused.isFull() ? FULL_STORAGE_TEXT_COLOR : NORMAL_TEXT_COLOR;
+        context.drawString(client.font, text, x, y, color);
     }
 
-    private static FocusedCategory resolveFocusedCategory(MinecraftClient client) {
-        if (client == null || client.world == null || client.crosshairTarget == null) {
+    private static FocusedCategory resolveFocusedCategory(Minecraft client) {
+        if (client == null || client.level == null || client.crosshairTarget == null) {
             return null;
         }
 
@@ -58,7 +70,7 @@ public final class FocusedTagBillboardRenderer {
             return null;
         }
 
-        Optional<String> categoryId = StorageTagResolver.resolveCategoryId(client, targeted.get());
+        Optional<String> categoryId = StorageTagResolver.resolveCategoryId(LatchLabelClientState.tagStore(), client, targeted.get());
         if (categoryId.isEmpty()) {
             return null;
         }
@@ -72,17 +84,21 @@ public final class FocusedTagBillboardRenderer {
             return null;
         }
 
-        Vec3d center = faceCenter(targeted.get(), hitResult.getSide());
-        return new FocusedCategory(category.get(), center);
+        ChestKey key = targeted.get();
+        Vec3 center = faceCenter(key, hitResult.getDirection());
+        return new FocusedCategory(category.get(), center, StorageFullness.isStorageFull(client.level, key.pos()));
     }
 
-    private static Vec3d faceCenter(ChestKey key, Direction face) {
-        double x = key.pos().getX() + 0.5 + (face.getOffsetX() * 0.501);
-        double y = key.pos().getY() + 0.5 + (face.getOffsetY() * 0.501);
-        double z = key.pos().getZ() + 0.5 + (face.getOffsetZ() * 0.501);
-        return new Vec3d(x, y, z);
+    private static Vec3 faceCenter(ChestKey key, Direction face) {
+        double x = key.pos().getX() + 0.5 + (face.getStepX() * 0.501);
+        double y = key.pos().getY() + 0.5 + (face.getStepY() * 0.501);
+        double z = key.pos().getZ() + 0.5 + (face.getStepZ() * 0.501);
+        return new Vec3(x, y, z);
     }
 
-    private record FocusedCategory(Category category, Vec3d center) {
+    private record FocusedCategory(Category category, Vec3 center, boolean isFull) {
+        private String displayName() {
+            return isFull ? "⚠️ " + category.name() + " ⚠️" : category.name();
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.latchandlabel.client.store;
 
+import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.data.ScopeUtil;
 import com.latchandlabel.client.model.ChestKey;
 
@@ -12,9 +13,9 @@ import java.util.Optional;
 
 /**
  * In-memory store for container-to-category tag mappings, organized by scope.
- * Scopes allow per-world/server isolation of tags. Reads fall through a
- * prioritized list of scopes (active first, then fallbacks). All public
- * methods are synchronized for thread safety.
+ * Scopes allow per-world/server isolation of tags. Normal reads use the active
+ * scope only; fallback scopes are loaded by the data manager for migration.
+ * All public methods are synchronized for thread safety.
  */
 public final class TagStore {
     public static final String DEFAULT_SCOPE_ID = "global";
@@ -28,17 +29,11 @@ public final class TagStore {
 
     public synchronized Optional<String> getTag(ChestKey chestKey) {
         Objects.requireNonNull(chestKey, "chestKey");
-        for (String scopeId : activeReadScopeIds) {
-            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
-            if (tags == null) {
-                continue;
-            }
-            String categoryId = tags.get(chestKey);
-            if (categoryId != null) {
-                return Optional.of(categoryId);
-            }
+        Map<ChestKey, String> tags = tagsByScope.get(activeScopeId);
+        if (tags == null) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        return Optional.ofNullable(tags.get(chestKey));
     }
 
     public synchronized void setTag(ChestKey chestKey, String categoryId) {
@@ -49,6 +44,7 @@ public final class TagStore {
             throw new IllegalArgumentException("categoryId must not be blank");
         }
 
+        LatchLabel.LOGGER.debug("[TagStore] setTag key={} category={} scope={}", chestKey, categoryId, activeScopeId);
         Map<ChestKey, String> tags = tagsForActiveScope();
         String previousCategoryId = tags.put(chestKey, categoryId);
         boolean changed = !Objects.equals(previousCategoryId, categoryId);
@@ -63,31 +59,34 @@ public final class TagStore {
 
     public synchronized boolean clearTag(ChestKey chestKey) {
         Objects.requireNonNull(chestKey, "chestKey");
-        boolean removed = false;
-        for (String scopeId : activeReadScopeIds) {
-            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
-            if (tags != null && tags.remove(chestKey) != null) {
-                removed = true;
-            }
-        }
+        LatchLabel.LOGGER.debug("[TagStore] clearTag key={}", chestKey);
+        Map<ChestKey, String> tags = tagsByScope.get(activeScopeId);
+        boolean removed = tags != null && tags.remove(chestKey) != null;
         if (removed) {
             notifyChanged();
         }
         return removed;
     }
 
-    /** Returns a merged snapshot of all tags across active read scopes (primary wins over fallbacks). */
+    /** Returns a snapshot of tags in the active write scope only. */
     public synchronized Map<ChestKey, String> snapshotTags() {
-        Map<ChestKey, String> merged = new HashMap<>();
-        for (int i = activeReadScopeIds.size() - 1; i >= 0; i--) {
-            String scopeId = activeReadScopeIds.get(i);
-            Map<ChestKey, String> tags = tagsByScope.get(scopeId);
-            if (tags != null && !tags.isEmpty()) {
-                merged.putAll(tags);
-            }
+        return snapshotActiveTags();
+    }
+
+    public synchronized Map<ChestKey, String> snapshotActiveTags() {
+        return snapshotTagsForScope(activeScopeId);
+    }
+
+    public synchronized Map<ChestKey, String> snapshotTagsForScope(String scopeId) {
+        String normalizedScopeId = normalizeScopeId(scopeId);
+        if (normalizedScopeId == null) {
+            normalizedScopeId = DEFAULT_SCOPE_ID;
         }
-        tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
-        return Map.copyOf(merged);
+        Map<ChestKey, String> tags = tagsByScope.get(normalizedScopeId);
+        if (tags == null || tags.isEmpty()) {
+            return Map.of();
+        }
+        return Map.copyOf(tags);
     }
 
     public synchronized void replaceAll(Map<ChestKey, String> tags, String lastUsedCategoryId) {
@@ -99,17 +98,24 @@ public final class TagStore {
         if (lastUsedCategoryId != null && !lastUsedCategoryId.isBlank()) {
             lastUsedByScope.put(activeScopeId, lastUsedCategoryId);
         }
-        replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId);
+        replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId, activeReadScopeIds);
     }
 
     public synchronized Optional<String> getLastUsedCategoryId() {
-        for (String scopeId : activeReadScopeIds) {
-            String categoryId = lastUsedCategoryIdByScope.get(scopeId);
-            if (categoryId != null && !categoryId.isBlank()) {
-                return Optional.of(categoryId);
-            }
+        return snapshotActiveLastUsedCategoryId();
+    }
+
+    public synchronized Optional<String> snapshotActiveLastUsedCategoryId() {
+        return snapshotLastUsedCategoryIdForScope(activeScopeId);
+    }
+
+    public synchronized Optional<String> snapshotLastUsedCategoryIdForScope(String scopeId) {
+        String normalizedScopeId = normalizeScopeId(scopeId);
+        if (normalizedScopeId == null) {
+            normalizedScopeId = DEFAULT_SCOPE_ID;
         }
-        return Optional.empty();
+        String categoryId = lastUsedCategoryIdByScope.get(normalizedScopeId);
+        return categoryId == null || categoryId.isBlank() ? Optional.empty() : Optional.of(categoryId);
     }
 
     public synchronized void setLastUsedCategoryId(String categoryId) {
@@ -134,6 +140,7 @@ public final class TagStore {
     /** Removes all tag entries and last-used references for the given category across all scopes. */
     public synchronized void clearCategoryReferences(String categoryId) {
         Objects.requireNonNull(categoryId, "categoryId");
+        LatchLabel.LOGGER.debug("[TagStore] clearCategoryReferences category={}", categoryId);
 
         boolean changed = false;
         for (Map<ChestKey, String> tags : tagsByScope.values()) {
@@ -186,7 +193,8 @@ public final class TagStore {
     public synchronized void replaceAllScopes(
             Map<String, Map<ChestKey, String>> tagsByScope,
             Map<String, String> lastUsedCategoryIdByScope,
-            String activeScopeId
+            String activeScopeId,
+            List<String> fallbackReadScopeIds
     ) {
         Objects.requireNonNull(tagsByScope, "tagsByScope");
         Objects.requireNonNull(lastUsedCategoryIdByScope, "lastUsedCategoryIdByScope");
@@ -223,7 +231,22 @@ public final class TagStore {
             this.activeScopeId = DEFAULT_SCOPE_ID;
         }
         this.tagsByScope.computeIfAbsent(this.activeScopeId, unused -> new HashMap<>());
-        this.activeReadScopeIds = List.of(this.activeScopeId);
+
+        LinkedHashSet<String> readScopes = new LinkedHashSet<>();
+        readScopes.add(this.activeScopeId);
+        if (fallbackReadScopeIds != null) {
+            for (String fallbackScopeId : fallbackReadScopeIds) {
+                String normalized = normalizeScopeId(fallbackScopeId);
+                if (normalized != null) {
+                    readScopes.add(normalized);
+                }
+            }
+        }
+        this.activeReadScopeIds = List.copyOf(readScopes);
+
+        int totalTags = this.tagsByScope.values().stream().mapToInt(Map::size).sum();
+        LatchLabel.LOGGER.info("[TagStore] replaceAllScopes: {} scopes, {} total tags, active={}",
+                this.tagsByScope.size(), totalTags, this.activeScopeId);
         notifyChanged();
     }
 

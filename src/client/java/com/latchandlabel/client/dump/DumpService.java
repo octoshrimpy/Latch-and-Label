@@ -3,16 +3,16 @@ package com.latchandlabel.client.dump;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.ui.ContainerTagButtonManager;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.Comparator;
@@ -36,8 +36,8 @@ public final class DumpService {
     private DumpService() {
     }
 
-    public static void start(MinecraftClient client) {
-        if (client.world == null || client.player == null) {
+    public static void start(Minecraft client) {
+        if (client.level == null || client.player == null) {
             return;
         }
 
@@ -46,7 +46,7 @@ public final class DumpService {
         if (inventoryCategories.isEmpty()) {
             if (client.inGameHud != null) {
                 client.inGameHud.setOverlayMessage(
-                        Text.translatable("latchlabel.dump.no_matching_items"),
+                        Component.translatable("latchlabel.dump.no_matching_items"),
                         false
                 );
             }
@@ -55,7 +55,7 @@ public final class DumpService {
 
         // Collect tagged containers whose category matches inventory categories
         Map<ChestKey, String> allTags = LatchLabelClientState.tagStore().snapshotTags();
-        PlayerEntity player = client.player;
+        Player player = client.player;
 
         dumpQueue.clear();
         active = false;
@@ -67,7 +67,7 @@ public final class DumpService {
 
         // Filter and sort by distance
         allTags.entrySet().stream()
-                .filter(entry -> entry.getKey().dimensionId().equals(client.world.getRegistryKey().getValue()))
+                .filter(entry -> entry.getKey().dimensionId().equals(client.level.dimension().location()))
                 .filter(entry -> inventoryCategories.contains(entry.getValue()))
                 .filter(entry -> DumpSettings.queueMode() || isWithinRange(player, entry.getKey()))
                 .sorted(Comparator.comparingDouble(entry -> distanceSq(player, entry.getKey())))
@@ -76,7 +76,7 @@ public final class DumpService {
         if (dumpQueue.isEmpty()) {
             if (client.inGameHud != null) {
                 client.inGameHud.setOverlayMessage(
-                        Text.translatable("latchlabel.dump.no_containers_in_range"),
+                        Component.translatable("latchlabel.dump.no_containers_in_range"),
                         false
                 );
             }
@@ -86,24 +86,24 @@ public final class DumpService {
         active = true;
         if (client.inGameHud != null) {
             client.inGameHud.setOverlayMessage(
-                    Text.translatable("latchlabel.dump.starting", dumpQueue.size()),
+                    Component.translatable("latchlabel.dump.starting", dumpQueue.size()),
                     false
             );
         }
     }
 
-    public static void onClientTick(MinecraftClient client) {
+    public static void onClientTick(Minecraft client) {
         if (!active) {
             return;
         }
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             stop();
             return;
         }
 
         if (autoCloseNext) {
-            if (client.currentScreen instanceof HandledScreen<?>) {
-                client.player.closeHandledScreen();
+            if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+                client.player.closeContainer();
             }
             autoCloseNext = false;
             awaitingScreen = false;
@@ -118,9 +118,9 @@ public final class DumpService {
         }
 
         // If a screen just opened after we interacted
-        if (awaitingScreen && client.currentScreen instanceof HandledScreen<?> handledScreen) {
+        if (awaitingScreen && client.currentScreen instanceof AbstractContainerScreen<?> handledScreen) {
             int moved = ContainerTagButtonManager.moveMatchingFromPlayerToStorage(
-                    client, handledScreen.getScreenHandler(), currentTarget.categoryId());
+                    client, handledScreen.getMenu(), currentTarget.categoryId());
             if (moved > 0) {
                 containersVisited++;
             }
@@ -137,7 +137,7 @@ public final class DumpService {
         if (dumpQueue.isEmpty()) {
             if (client.inGameHud != null) {
                 client.inGameHud.setOverlayMessage(
-                        Text.translatable("latchlabel.dump.done", containersVisited),
+                        Component.translatable("latchlabel.dump.done", containersVisited),
                         false
                 );
             }
@@ -145,7 +145,7 @@ public final class DumpService {
             return;
         }
 
-        PlayerEntity player = client.player;
+        Player player = client.player;
 
         if (DumpSettings.queueMode()) {
             // In queue mode: look for the first container in reach; skip out-of-reach ones back to end
@@ -155,7 +155,7 @@ public final class DumpService {
             while (!dumpQueue.isEmpty() && checked < queueSize) {
                 DumpTarget candidate = dumpQueue.poll();
                 checked++;
-                if (!candidate.key().dimensionId().equals(client.world.getRegistryKey().getValue())) {
+                if (!candidate.key().dimensionId().equals(client.level.dimension().location())) {
                     continue; // discard dimension mismatches
                 }
                 if (isWithinRange(player, candidate.key())) {
@@ -174,7 +174,7 @@ public final class DumpService {
             DumpTarget next = null;
             while (!dumpQueue.isEmpty()) {
                 DumpTarget candidate = dumpQueue.poll();
-                if (!candidate.key().dimensionId().equals(client.world.getRegistryKey().getValue())) {
+                if (!candidate.key().dimensionId().equals(client.level.dimension().location())) {
                     continue;
                 }
                 if (isWithinRange(player, candidate.key())) {
@@ -185,7 +185,7 @@ public final class DumpService {
             if (next == null) {
                 if (client.inGameHud != null) {
                     client.inGameHud.setOverlayMessage(
-                            Text.translatable("latchlabel.dump.done", containersVisited),
+                            Component.translatable("latchlabel.dump.done", containersVisited),
                             false
                     );
                 }
@@ -196,16 +196,16 @@ public final class DumpService {
         }
     }
 
-    private static void openContainer(MinecraftClient client, DumpTarget target) {
+    private static void openContainer(Minecraft client, DumpTarget target) {
         currentTarget = target;
         BlockPos pos = target.key().pos();
         BlockHitResult hitResult = new BlockHitResult(
-                Vec3d.ofCenter(pos),
+                Vec3.ofCenter(pos),
                 Direction.UP,
                 pos,
                 false
         );
-        client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
+        client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
         awaitingScreen = true;
         cooldownTicks = 2;
     }
@@ -220,10 +220,10 @@ public final class DumpService {
         currentTarget = null;
     }
 
-    private static Set<String> collectInventoryCategories(PlayerEntity player) {
+    private static Set<String> collectInventoryCategories(Player player) {
         Set<String> categories = new HashSet<>();
         for (int i = 0; i < player.getInventory().size(); i++) {
-            ItemStack stack = player.getInventory().getStack(i);
+            ItemStack stack = player.getInventory().getItem(i);
             if (stack.isEmpty()) {
                 continue;
             }
@@ -234,14 +234,14 @@ public final class DumpService {
         return categories;
     }
 
-    private static boolean isWithinRange(PlayerEntity player, ChestKey key) {
+    private static boolean isWithinRange(Player player, ChestKey key) {
         BlockPos pos = key.pos();
         double range = DumpSettings.dumpRange();
-        return player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= range * range;
+        return player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= range * range;
     }
 
-    private static double distanceSq(PlayerEntity player, ChestKey key) {
+    private static double distanceSq(Player player, ChestKey key) {
         BlockPos pos = key.pos();
-        return player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        return player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
     }
 }

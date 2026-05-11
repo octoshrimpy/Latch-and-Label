@@ -1,17 +1,17 @@
 package com.latchandlabel.client.render;
 
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Box;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.world.phys.AABB;
 
 public final class ThickOutlineRenderer {
     private ThickOutlineRenderer() {
     }
 
     public static void drawThickOutline(
-            MatrixStack matrices,
+            PoseStack matrices,
             VertexConsumer consumer,
-            Box box,
+            AABB box,
             float thickness,
             float r,
             float g,
@@ -46,7 +46,7 @@ public final class ThickOutlineRenderer {
     }
 
     private static void drawPrism(
-            MatrixStack matrices,
+            PoseStack matrices,
             VertexConsumer consumer,
             double minX,
             double minY,

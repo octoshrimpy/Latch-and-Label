@@ -15,44 +15,45 @@ import com.latchandlabel.client.targeting.ContainerTargeting;
 import com.latchandlabel.client.ui.ContainerTagButtonManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.Window;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.KeyMapping;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.Window;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
 
 public final class ClientInputHandler {
-    private static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(Identifier.of("latchlabel", "general"));
+    // Category is a translation key string in Mojang KeyMapping
+    private static final String CATEGORY = "key.categories.latchlabel.general";
 
-    private static KeyBinding openPickerKey;
-    private static KeyBinding findShortcutKey;
-    private static KeyBinding moveToStorageKey;
-    private static boolean inspectModeActive;
+    private static KeyMapping openPickerKey;
+    private static KeyMapping findShortcutKey;
+    private static KeyMapping moveToStorageKey;
+    private static volatile boolean inspectModeActive;
 
     private ClientInputHandler() {
     }
 
     public static void register() {
-        openPickerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        openPickerKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.latchlabel.open_picker",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 KeybindSettings.openPickerKeyCode(),
                 CATEGORY
         ));
-        findShortcutKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        findShortcutKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.latchlabel.find_shortcut",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 KeybindSettings.findShortcutKeyCode(),
                 CATEGORY
         ));
-        moveToStorageKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        moveToStorageKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.latchlabel.move_to_storage",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 KeybindSettings.moveToStorageKeyCode(),
                 CATEGORY
         ));
@@ -65,17 +66,33 @@ public final class ClientInputHandler {
             return;
         }
 
-        openPickerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.openPickerKeyCode()));
-        findShortcutKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.findShortcutKeyCode()));
-        moveToStorageKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(KeybindSettings.moveToStorageKeyCode()));
-        KeyBinding.updateKeysByCode();
+        openPickerKey.setBoundKey(InputConstants.Type.KEYSYM.createFromCode(KeybindSettings.openPickerKeyCode()));
+        findShortcutKey.setBoundKey(InputConstants.Type.KEYSYM.createFromCode(KeybindSettings.findShortcutKeyCode()));
+        moveToStorageKey.setBoundKey(InputConstants.Type.KEYSYM.createFromCode(KeybindSettings.moveToStorageKeyCode()));
+        KeyMapping.resetMapping();
     }
 
     public static boolean isInspectModeActive() {
         return inspectModeActive;
     }
 
-    private static void onEndTick(MinecraftClient client) {
+    public static boolean isShiftDown() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return false;
+        }
+        return isModifierDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT);
+    }
+
+    public static boolean isAltDown() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return false;
+        }
+        return isModifierDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT);
+    }
+
+    private static void onEndTick(Minecraft client) {
         if (client == null || client.getWindow() == null) {
             inspectModeActive = false;
             return;
@@ -100,7 +117,7 @@ public final class ClientInputHandler {
         }
     }
 
-    private static void onOpenPickerPressed(MinecraftClient client, boolean isShiftDown, boolean isCtrlDown) {
+    private static void onOpenPickerPressed(Minecraft client, boolean isShiftDown, boolean isCtrlDown) {
         Optional<ChestKey> target = ContainerTargeting.getTargetedContainer(client);
         if (target.isEmpty()) {
             if (client.player != null && tryBookInteraction(client)) {
@@ -131,24 +148,24 @@ public final class ClientInputHandler {
         });
     }
 
-    private static void onFindShortcutPressed(MinecraftClient client) {
+    private static void onFindShortcutPressed(Minecraft client) {
         if (!FindSettings.allowFindKeybind()) {
             return;
         }
         FindCommand.runFromShortcut(client);
     }
 
-    private static void onMoveToStoragePressed(MinecraftClient client) {
+    private static void onMoveToStoragePressed(Minecraft client) {
         ContainerTagButtonManager.triggerMoveToStorageForCurrentScreen(client);
     }
 
-    private static boolean tryBookInteraction(MinecraftClient client) {
-        ItemStack heldStack = client.player.getMainHandStack();
-        if (heldStack.isOf(Items.WRITABLE_BOOK)) {
+    private static boolean tryBookInteraction(Minecraft client) {
+        ItemStack heldStack = client.player.getMainHandItem();
+        if (heldStack.is(Items.WRITABLE_BOOK)) {
             client.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT));
             return true;
         }
-        if (heldStack.isOf(Items.WRITTEN_BOOK) && BookExportImportService.isLatchLabelBook(heldStack)) {
+        if (heldStack.is(Items.WRITTEN_BOOK) && BookExportImportService.isLatchLabelBook(heldStack)) {
             client.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
             return true;
         }
@@ -156,6 +173,6 @@ public final class ClientInputHandler {
     }
 
     private static boolean isModifierDown(Window window, int leftKey, int rightKey) {
-        return InputUtil.isKeyPressed(window, leftKey) || InputUtil.isKeyPressed(window, rightKey);
+        return InputConstants.isKeyDown(window.getWindow(), leftKey) || InputConstants.isKeyDown(window.getWindow(), rightKey);
     }
 }

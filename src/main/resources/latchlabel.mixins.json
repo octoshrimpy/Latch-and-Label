@@ -2,7 +2,7 @@
   "required": false,
   "package": "com.latchandlabel.mixin",
   "refmap": "latchlabel.refmap.json",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "client": [
     "client.HandledScreenSlotBackgroundLayerMixin",
     "client.HandledScreenBookAltClickMixin"

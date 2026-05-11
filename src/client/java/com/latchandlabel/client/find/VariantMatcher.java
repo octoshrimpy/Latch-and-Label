@@ -1,9 +1,9 @@
 package com.latchandlabel.client.find;
 
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -30,7 +30,7 @@ public final class VariantMatcher {
             return new VariantMatchResult(Set.copyOf(matches), false);
         }
 
-        Identifier targetId = Registries.ITEM.getId(target);
+        ResourceLocation targetId = BuiltInRegistries.ITEM.getKey(target).location();
         if (targetId == null) {
             return new VariantMatchResult(Set.copyOf(matches), false);
         }
@@ -40,12 +40,12 @@ public final class VariantMatcher {
 
         boolean usedVariants = false;
         for (String suffix : VARIANT_SUFFIXES) {
-            Identifier candidateId = Identifier.tryParse(targetId.getNamespace() + ":" + root + suffix);
-            if (candidateId == null || !Registries.ITEM.containsId(candidateId)) {
+            ResourceLocation candidateId = ResourceLocation.tryParse(targetId.getNamespace() + ":" + root + suffix);
+            if (candidateId == null || !BuiltInRegistries.ITEM.containsKey(candidateId)) {
                 continue;
             }
 
-            Item candidate = Registries.ITEM.get(candidateId);
+            Item candidate = BuiltInRegistries.ITEM.get(candidateId);
             if (candidate == target) {
                 continue;
             }

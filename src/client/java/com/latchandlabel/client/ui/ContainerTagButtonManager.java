@@ -1,6 +1,7 @@
 package com.latchandlabel.client.ui;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.config.ContainerDetectionSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
 import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.tagging.StorageTagResolver;
@@ -11,26 +12,28 @@ import com.latchandlabel.client.model.ChestKey;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.WeakHashMap;
 
 public final class ContainerTagButtonManager {
@@ -42,7 +45,7 @@ public final class ContainerTagButtonManager {
     private ContainerTagButtonManager() {
     }
 
-    public static void addIfSupported(MinecraftClient client, Screen screen, int scaledWidth, int scaledHeight) {
+    public static void addIfSupported(Minecraft client, Screen screen, int scaledWidth, int scaledHeight) {
         if (!ContainerScreenContextResolver.isSupportedScreen(screen)) {
             return;
         }
@@ -51,50 +54,64 @@ public final class ContainerTagButtonManager {
         int backgroundWidth = 176;
         int backgroundHeight = 166;
 
-        if (screen instanceof GenericContainerScreen genericScreen) {
-            GenericContainerScreenHandler handler = genericScreen.getScreenHandler();
+        if (screen instanceof ContainerScreen genericScreen) {
+            ChestMenu handler = genericScreen.getMenu();
             backgroundHeight = 114 + handler.getRows() * 18;
         } else if (screen instanceof ShulkerBoxScreen) {
             backgroundHeight = 166;
         }
 
-        int x = Math.max(4, (scaledWidth - backgroundWidth) / 2 - (BUTTON_WIDTH + 4));
+        int x = Math.max(4 + BUTTON_WIDTH + BUTTON_GAP, (scaledWidth - backgroundWidth) / 2 - (BUTTON_WIDTH + 4));
+        int detectedX = x - BUTTON_WIDTH - BUTTON_GAP;
         int y = Math.max(4, (scaledHeight - backgroundHeight) / 2 + 4);
         int moveDownY = y + BUTTON_HEIGHT + BUTTON_GAP;
         int moveUpY = moveDownY + BUTTON_HEIGHT + BUTTON_GAP;
 
-        ButtonWidget button = ButtonWidget.builder(buttonLabel(resolvedTarget, resolveCategory(client, resolvedTarget)), clicked -> {
-            Optional<ButtonRegistration> reg = Optional.ofNullable(BUTTONS.get(screen));
-            reg.flatMap(ButtonRegistration::target).ifPresent(chestKey -> TaggingController.openPicker(client, chestKey));
-        })
-                .dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT)
-                .tooltip(buttonTooltip(resolvedTarget, resolveCategory(client, resolvedTarget)))
+        Button detectedButton = Button.builder(.Component.empty(), clicked -> {
+                    Optional<ButtonRegistration> reg = Optional.ofNullable(BUTTONS.get(screen));
+                    reg.ifPresent(registration -> detectCategoryFromStorage(screen)
+                            .ifPresent(category -> registration.target()
+                                    .ifPresent(chestKey -> TaggingController.applyTag(client, chestKey, category.id()))));
+                })
+                .dimensions(detectedX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build();
+        detectedButton.setTooltip(Tooltip.of(.Component.empty()));
+        detectedButton.visible = false;
+        detectedButton.active = false;
 
-        ButtonWidget moveDownButton = ButtonWidget.builder(Text.literal("↓"), clicked -> {
+        Button button = Button.builder(buttonLabel(resolvedTarget, resolveCategory(client, resolvedTarget)), clicked -> {
+                    Optional<ButtonRegistration> reg = Optional.ofNullable(BUTTONS.get(screen));
+                    reg.flatMap(ButtonRegistration::target).ifPresent(chestKey -> TaggingController.openPicker(client, chestKey));
+                })
+                .dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .build();
+        button.setTooltip(buttonTooltip(resolvedTarget, resolveCategory(client, resolvedTarget)));
+
+        Button moveDownButton = Button.builder(Component.literal("↓"), clicked -> {
                     Optional<ButtonRegistration> reg = Optional.ofNullable(BUTTONS.get(screen));
                     reg.ifPresent(registration -> moveNonMatchingFromStorageToPlayer(client, screen, registration));
                 })
                 .dimensions(x, moveDownY, BUTTON_WIDTH, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.translatable("latchlabel.move_button.down")))
                 .build();
+        moveDownButton.setTooltip(Tooltip.of(Component.translatable("latchlabel.move_button.down")));
 
-        ButtonWidget moveUpButton = ButtonWidget.builder(Text.literal("↑"), clicked -> {
+        Button moveUpButton = Button.builder(Component.literal("↑"), clicked -> {
                     Optional<ButtonRegistration> reg = Optional.ofNullable(BUTTONS.get(screen));
                     reg.ifPresent(registration -> moveMatchingFromPlayerToStorage(client, screen, registration));
                 })
                 .dimensions(x, moveUpY, BUTTON_WIDTH, BUTTON_HEIGHT)
-                .tooltip(moveUpButtonTooltip(resolveCategory(client, resolvedTarget)))
                 .build();
+        moveUpButton.setTooltip(moveUpButtonTooltip(resolveCategory(client, resolvedTarget)));
 
         button.active = resolvedTarget.isPresent();
         moveDownButton.active = false;
         moveUpButton.active = false;
+        Screens.getButtons(screen).add(detectedButton);
         Screens.getButtons(screen).add(button);
         Screens.getButtons(screen).add(moveDownButton);
         Screens.getButtons(screen).add(moveUpButton);
 
-        ButtonRegistration registration = new ButtonRegistration(button, moveDownButton, moveUpButton, resolvedTarget);
+        ButtonRegistration registration = new ButtonRegistration(button, detectedButton, moveDownButton, moveUpButton, resolvedTarget);
         BUTTONS.put(screen, registration);
 
         ScreenMouseEvents.afterMouseClick(screen).register((currentScreen, clickContext, consumed) -> {
@@ -111,20 +128,36 @@ public final class ContainerTagButtonManager {
             return true;
         });
 
-        ScreenEvents.afterRender(screen).register((currentScreen, drawContext, mouseX, mouseY, tickDelta) -> {
+        ScreenEvents.beforeRender(screen).register((currentScreen, drawContext, mouseX, mouseY, tickDelta) -> {
             ButtonRegistration reg = BUTTONS.get(currentScreen);
             if (reg == null) {
                 return;
             }
             button.active = reg.target().isPresent();
             Optional<Category> currentCategory = resolveCategory(client, reg.target());
+            Optional<Category> detectedCategory = currentCategory.isEmpty()
+                    ? detectCategoryFromStorage(screen)
+                    : Optional.empty();
             boolean moveButtonsActive = reg.target().isPresent() && currentCategory.isPresent();
+            reg.setCurrentCategory(currentCategory);
+            reg.setDetectedCategory(detectedCategory);
+            reg.detectedButton().visible = reg.target().isPresent() && currentCategory.isEmpty() && detectedCategory.isPresent();
+            reg.detectedButton().active = reg.detectedButton().visible;
+            reg.detectedButton().setTooltip(detectedButtonTooltip(detectedCategory));
             reg.moveDownButton().active = moveButtonsActive;
             reg.moveUpButton().active = moveButtonsActive;
             button.setMessage(buttonLabel(reg.target(), currentCategory));
             button.setTooltip(buttonTooltip(reg.target(), currentCategory));
             reg.moveUpButton().setTooltip(moveUpButtonTooltip(currentCategory));
-            renderButtonDecoration(drawContext, reg, currentCategory);
+        });
+
+        ScreenEvents.afterRender(screen).register((currentScreen, drawContext, mouseX, mouseY, tickDelta) -> {
+            ButtonRegistration reg = BUTTONS.get(currentScreen);
+            if (reg == null) {
+                return;
+            }
+
+            renderButtonDecoration(drawContext, reg, reg.currentCategory(), reg.detectedCategory());
         });
     }
 
@@ -133,15 +166,46 @@ public final class ContainerTagButtonManager {
         if (registration == null) {
             return Optional.empty();
         }
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         return resolveCategory(client, registration.target());
     }
 
-    public static boolean triggerMoveToStorageForCurrentScreen(MinecraftClient client) {
+    public static boolean triggerMoveToStorageForCurrentScreen(Minecraft client) {
         return triggerMoveToStorageForCurrentScreen(client, null);
     }
 
-    public static boolean triggerMoveToStorageForCurrentScreen(MinecraftClient client, ChestKey expectedTarget) {
+    public static boolean triggerMoveToStorageForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
+        return moveMatchingFromPlayerToStorageForCurrentScreen(client, expectedTarget) >= 0;
+    }
+
+    public static int moveMatchingFromPlayerToStorageForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
+        if (client == null || client.currentScreen == null) {
+            return -1;
+        }
+
+        Screen screen = client.currentScreen;
+        ButtonRegistration registration = BUTTONS.get(screen);
+        if (registration == null) {
+            return -1;
+        }
+        if (expectedTarget != null) {
+            Optional<ChestKey> actualTarget = registration.target();
+            if (actualTarget.isEmpty() || !expectedTarget.equals(actualTarget.get())) {
+                return -1;
+            }
+        }
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
+            return -1;
+        }
+        Optional<Category> category = resolveCategory(client, registration.target());
+        if (category.isEmpty()) {
+            return -1;
+        }
+
+        return moveMatchingFromPlayerToStorage(client, handledScreen.getMenu(), category.get().id());
+    }
+
+    public static boolean hasMatchingPlayerStacksForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
         if (client == null || client.currentScreen == null) {
             return false;
         }
@@ -157,92 +221,199 @@ public final class ContainerTagButtonManager {
                 return false;
             }
         }
-
-        moveMatchingFromPlayerToStorage(client, screen, registration);
-        return true;
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
+            return false;
+        }
+        Optional<Category> category = resolveCategory(client, registration.target());
+        return category
+                .map(value -> hasMatchingPlayerStacks(handledScreen.getMenu(), value.id()))
+                .orElse(false);
     }
 
-    private static Text buttonLabel(Optional<ChestKey> target, Optional<Category> category) {
+    public static int moveNonMatchingFromStorageToPlayerForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
+        if (client == null || client.currentScreen == null) {
+            return -1;
+        }
+
+        Screen screen = client.currentScreen;
+        ButtonRegistration registration = BUTTONS.get(screen);
+        if (registration == null) {
+            return -1;
+        }
+        if (expectedTarget != null) {
+            Optional<ChestKey> actualTarget = registration.target();
+            if (actualTarget.isEmpty() || !expectedTarget.equals(actualTarget.get())) {
+                return -1;
+            }
+        }
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
+            return -1;
+        }
+        Optional<Category> category = resolveCategory(client, registration.target());
+        if (category.isEmpty()) {
+            return -1;
+        }
+
+        return moveNonMatchingFromStorageToPlayer(client, handledScreen.getMenu(), category.get().id());
+    }
+
+    private static Component buttonLabel(Optional<ChestKey> target, Optional<Category> category) {
         if (target.isEmpty()) {
-            return Text.literal("?");
+            return Component.literal("?");
         }
 
         if (category.isEmpty()) {
-            return Text.literal("+");
+            return Component.literal("+");
         }
 
-        return Text.empty();
+        return .Component.empty();
     }
 
     private static Tooltip buttonTooltip(Optional<ChestKey> target, Optional<Category> category) {
         if (target.isEmpty()) {
-            return Tooltip.of(Text.translatable("latchlabel.tag_button.unresolved"));
+            return Tooltip.of(Component.translatable("latchlabel.tag_button.unresolved"));
         }
 
         if (category.isPresent()) {
-            return Tooltip.of(Text.translatable("latchlabel.tag_button.current", category.get().name()));
+            return Tooltip.of(Component.translatable("latchlabel.tag_button.current", category.get().name()));
         }
 
-        return Tooltip.of(Text.translatable("latchlabel.tag_button.none"));
+        return Tooltip.of(Component.translatable("latchlabel.tag_button.none"));
     }
 
-    private static Optional<Category> resolveCategory(MinecraftClient client, Optional<ChestKey> target) {
-        return target.flatMap(chestKey -> StorageTagResolver.resolveCategoryId(client, chestKey)
+    private static Tooltip detectedButtonTooltip(Optional<Category> category) {
+        return category
+                .map(value -> Tooltip.of(Component.translatable("latchlabel.tag_button.detected", value.name())))
+                .orElseGet(() -> Tooltip.of(.Component.empty()));
+    }
+
+    private static Optional<Category> resolveCategory(Minecraft client, Optional<ChestKey> target) {
+        return target.flatMap(chestKey -> StorageTagResolver.resolveCategoryId(LatchLabelClientState.tagStore(), client, chestKey)
                 .flatMap(categoryId -> LatchLabelClientState.categoryStore().getById(categoryId)));
     }
 
-    private static boolean isWithinButton(double mouseX, double mouseY, ButtonWidget button) {
+    private static boolean isWithinButton(double mouseX, double mouseY, Button button) {
         return mouseX >= button.getX()
                 && mouseX <= button.getX() + button.getWidth()
                 && mouseY >= button.getY()
                 && mouseY <= button.getY() + button.getHeight();
     }
 
-    private static void renderButtonDecoration(DrawContext context, ButtonRegistration registration, Optional<Category> currentCategory) {
-        ButtonWidget button = registration.button();
-        ButtonWidget moveDownButton = registration.moveDownButton();
-        ButtonWidget moveUpButton = registration.moveUpButton();
-
-        int borderColor = 0xFF4A4A4A;
-        if (currentCategory.isPresent()) {
-            borderColor = 0xFF000000 | currentCategory.get().color();
+    private static void renderButtonDecoration(
+            GuiGraphics context,
+            ButtonRegistration registration,
+            Optional<Category> currentCategory,
+            Optional<Category> detectedCategory
+    ) {
+        renderButtonBorderAndIcon(context, registration.button(), currentCategory, true);
+        if (registration.detectedButton().visible) {
+            renderButtonBorderAndIcon(context, registration.detectedButton(), detectedCategory, true);
         }
-        context.drawStrokedRectangle(button.getX(), button.getY(), button.getWidth(), button.getHeight(), borderColor);
-        context.drawStrokedRectangle(moveDownButton.getX(), moveDownButton.getY(), moveDownButton.getWidth(), moveDownButton.getHeight(), borderColor);
-        context.drawStrokedRectangle(moveUpButton.getX(), moveUpButton.getY(), moveUpButton.getWidth(), moveUpButton.getHeight(), borderColor);
+        renderButtonBorderAndIcon(context, registration.moveDownButton(), currentCategory, false);
+        renderButtonBorderAndIcon(context, registration.moveUpButton(), currentCategory, false);
+    }
 
-        currentCategory.ifPresent(category -> {
-            Item item = Registries.ITEM.get(category.iconItemId());
-            if (item == null) {
-                return;
+    private static void renderButtonBorderAndIcon(
+            GuiGraphics context,
+            Button button,
+            Optional<Category> category,
+            boolean drawIcon
+    ) {
+        if (category.isEmpty()) {
+            return;
+        }
+
+        int borderColor = 0xFF000000 | category.get().color();
+        context.drawStrokedRectangle(button.getX(), button.getY(), button.getWidth(), button.getHeight(), borderColor);
+
+        if (!drawIcon) {
+            return;
+        }
+
+        Item item = BuiltInRegistries.ITEM.get(category.get().iconItemId());
+        if (item == null) {
+            return;
+        }
+        context.renderItem(new ItemStack(item), button.getX() + 2, button.getY() + 2);
+    }
+
+    private static Optional<Category> detectCategoryFromStorage(Screen screen) {
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
+            return Optional.empty();
+        }
+
+        AbstractContainerMenu handler = handledScreen.getMenu();
+        Map<String, Integer> countsByCategory = new LinkedHashMap<>();
+        int totalItems = 0;
+
+        for (Slot slot : handler.slots) {
+            if (slot.inventory instanceof Container) {
+                continue;
             }
 
-            int iconX = button.getX() + 2;
-            int iconY = button.getY() + 2;
-            context.drawItem(new ItemStack(item), iconX, iconY);
-        });
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            int count = stack.getCount();
+            totalItems += count;
+            LatchLabelClientState.itemCategoryMappingService()
+                    .categoryIdFor(stack)
+                    .filter(categoryId -> LatchLabelClientState.categoryStore().getById(categoryId).isPresent())
+                    .ifPresent(categoryId -> countsByCategory.merge(categoryId, count, Integer::sum));
+        }
+
+        if (totalItems <= 0 || countsByCategory.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String bestCategoryId = null;
+        int bestCount = 0;
+        boolean tied = false;
+        for (Map.Entry<String, Integer> entry : countsByCategory.entrySet()) {
+            int count = entry.getValue();
+            if (count > bestCount) {
+                bestCategoryId = entry.getKey();
+                bestCount = count;
+                tied = false;
+            } else if (count == bestCount) {
+                tied = true;
+            }
+        }
+
+        if (bestCategoryId == null || tied) {
+            return Optional.empty();
+        }
+
+        int thresholdPercent = ContainerDetectionSettings.detectedCategoryThresholdPercent();
+        if ((long) bestCount * 100 <= (long) totalItems * thresholdPercent) {
+            return Optional.empty();
+        }
+
+        return LatchLabelClientState.categoryStore().getById(bestCategoryId);
     }
 
     private static Tooltip moveUpButtonTooltip(Optional<Category> category) {
         if (category.isEmpty()) {
-            return Tooltip.of(Text.translatable("latchlabel.move_button.up"));
+            return Tooltip.of(Component.translatable("latchlabel.move_button.up"));
         }
 
         String sourceKey = TransferSettings.moveSourceMode() == MoveSourceMode.INVENTORY
                 ? "screen.latchlabel.config.move_source.inventory"
                 : "screen.latchlabel.config.move_source.inventory_hotbar";
-        return Tooltip.of(Text.translatable(
+        return Tooltip.of(Component.translatable(
                 "latchlabel.move_button.up_mode",
                 category.get().name(),
-                Text.translatable(sourceKey)
+                Component.translatable(sourceKey)
         ));
     }
 
-    private static void moveNonMatchingFromStorageToPlayer(MinecraftClient client, Screen screen, ButtonRegistration registration) {
-        if (client == null || client.player == null || client.interactionManager == null) {
+    private static void moveNonMatchingFromStorageToPlayer(Minecraft client, Screen screen, ButtonRegistration registration) {
+        if (client == null || client.player == null || client.gameMode == null) {
             return;
         }
-        if (!(screen instanceof HandledScreen<?> handledScreen)) {
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
             return;
         }
 
@@ -251,29 +422,16 @@ public final class ContainerTagButtonManager {
             return;
         }
 
-        ScreenHandler handler = handledScreen.getScreenHandler();
-        int movedStacks = 0;
-
-        for (Slot slot : handler.slots) {
-            if (slot.inventory instanceof PlayerInventory) {
-                continue;
-            }
-
-            ItemStack stack = slot.getStack();
-            if (stack.isEmpty() || isInCategory(stack, category.get().id())) {
-                continue;
-            }
-
-            if (quickMove(client, handler, slot.id)) {
-                movedStacks++;
-            }
-        }
-
+        int movedStacks = moveNonMatchingFromStorageToPlayer(
+                client,
+                handledScreen.getMenu(),
+                category.get().id()
+        );
         showMoveOverlay(client, "latchlabel.move_result.down", movedStacks);
     }
 
-    public static int moveMatchingFromPlayerToStorage(MinecraftClient client, ScreenHandler handler, String categoryId) {
-        if (client == null || client.player == null || client.interactionManager == null) {
+    public static int moveNonMatchingFromStorageToPlayer(Minecraft client, AbstractContainerMenu handler, String categoryId) {
+        if (client == null || client.player == null || client.gameMode == null) {
             return 0;
         }
 
@@ -281,14 +439,60 @@ public final class ContainerTagButtonManager {
         int movedStacks = 0;
 
         for (Slot slot : handler.slots) {
-            if (!(slot.inventory instanceof PlayerInventory)) {
+            if (slot.inventory instanceof Container) {
+                continue;
+            }
+
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty() || isInCategory(stack, categoryId)) {
+                continue;
+            }
+
+            if (moveStorageStackToPlayer(client, handler, slot, includeHotbar)) {
+                movedStacks++;
+            }
+        }
+
+        return movedStacks;
+    }
+
+    public static boolean hasMatchingPlayerStacks(AbstractContainerMenu handler, String categoryId) {
+        boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
+
+        for (Slot slot : handler.slots) {
+            if (!(slot.inventory instanceof Container)) {
                 continue;
             }
             if (!includeHotbar && slot.getIndex() < 9) {
                 continue;
             }
 
-            ItemStack stack = slot.getStack();
+            ItemStack stack = slot.getItem();
+            if (!stack.isEmpty() && isInCategory(stack, categoryId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static int moveMatchingFromPlayerToStorage(Minecraft client, AbstractContainerMenu handler, String categoryId) {
+        if (client == null || client.player == null || client.gameMode == null) {
+            return 0;
+        }
+
+        boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
+        int movedStacks = 0;
+
+        for (Slot slot : handler.slots) {
+            if (!(slot.inventory instanceof Container)) {
+                continue;
+            }
+            if (!includeHotbar && slot.getIndex() < 9) {
+                continue;
+            }
+
+            ItemStack stack = slot.getItem();
             if (stack.isEmpty() || !isInCategory(stack, categoryId)) {
                 continue;
             }
@@ -301,11 +505,11 @@ public final class ContainerTagButtonManager {
         return movedStacks;
     }
 
-    private static void moveMatchingFromPlayerToStorage(MinecraftClient client, Screen screen, ButtonRegistration registration) {
-        if (client == null || client.player == null || client.interactionManager == null) {
+    private static void moveMatchingFromPlayerToStorage(Minecraft client, Screen screen, ButtonRegistration registration) {
+        if (client == null || client.player == null || client.gameMode == null) {
             return;
         }
-        if (!(screen instanceof HandledScreen<?> handledScreen)) {
+        if (!(screen instanceof AbstractContainerScreen<?> handledScreen)) {
             return;
         }
 
@@ -314,19 +518,20 @@ public final class ContainerTagButtonManager {
             return;
         }
 
+        boolean hadMatchingStacks = hasMatchingPlayerStacks(handledScreen.getMenu(), category.get().id());
         boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
-        ScreenHandler handler = handledScreen.getScreenHandler();
+        AbstractContainerMenu handler = handledScreen.getMenu();
         int movedStacks = 0;
 
         for (Slot slot : handler.slots) {
-            if (!(slot.inventory instanceof PlayerInventory)) {
+            if (!(slot.inventory instanceof Container)) {
                 continue;
             }
             if (!includeHotbar && slot.getIndex() < 9) {
                 continue;
             }
 
-            ItemStack stack = slot.getStack();
+            ItemStack stack = slot.getItem();
             if (stack.isEmpty() || !isInCategory(stack, category.get().id())) {
                 continue;
             }
@@ -336,23 +541,140 @@ public final class ContainerTagButtonManager {
             }
         }
 
-        showMoveOverlay(client, "latchlabel.move_result.up", movedStacks);
+        if (movedStacks == 0 && hadMatchingStacks) {
+            showMoveOverlay(client, Component.translatable("latchlabel.move_result.up_full"));
+        } else {
+            showMoveOverlay(client, Component.translatable("latchlabel.move_result.up", movedStacks));
+        }
     }
 
-    private static boolean quickMove(MinecraftClient client, ScreenHandler handler, int slotId) {
+    private static boolean quickMove(Minecraft client, AbstractContainerMenu handler, int slotId) {
         if (slotId < 0 || slotId >= handler.slots.size()) {
             return false;
         }
 
         Slot slot = handler.slots.get(slotId);
-        if (!slot.hasStack()) {
+        if (!slot.hasItem()) {
             return false;
         }
 
-        ItemStack before = slot.getStack().copy();
-        client.interactionManager.clickSlot(handler.syncId, slotId, 0, SlotActionType.QUICK_MOVE, client.player);
-        ItemStack after = slot.getStack();
+        ItemStack before = slot.getItem().copy();
+        client.gameMode.clickSlot(handler.syncId, slotId, 0, ClickType.QUICK_MOVE, client.player);
+        ItemStack after = slot.getItem();
         return !ItemStack.areEqual(before, after);
+    }
+
+    private static boolean moveStorageStackToPlayer(
+            Minecraft client,
+            AbstractContainerMenu handler,
+            Slot sourceSlot,
+            boolean includeHotbar
+    ) {
+        if (includeHotbar) {
+            return quickMove(client, handler, sourceSlot.id);
+        }
+
+        ItemStack sourceBefore = sourceSlot.getItem().copy();
+        if (sourceBefore.isEmpty() || !handler.getCursorStack().isEmpty()) {
+            return false;
+        }
+        if (!hasInventorySpace(handler, sourceBefore, false)) {
+            return false;
+        }
+
+        pickup(client, handler, sourceSlot.id);
+        if (handler.getCursorStack().isEmpty()) {
+            return false;
+        }
+
+        moveCursorIntoInventory(client, handler, false);
+        if (!handler.getCursorStack().isEmpty()) {
+            pickup(client, handler, sourceSlot.id);
+        }
+
+        ItemStack sourceAfter = sourceSlot.getItem();
+        return sourceAfter.isEmpty() || sourceAfter.getCount() < sourceBefore.getCount();
+    }
+
+    private static void moveCursorIntoInventory(Minecraft client, AbstractContainerMenu handler, boolean includeHotbar) {
+        moveCursorIntoCompatiblePlayerStacks(client, handler, includeHotbar);
+        moveCursorIntoEmptyPlayerSlots(client, handler, includeHotbar);
+    }
+
+    private static void moveCursorIntoCompatiblePlayerStacks(
+            Minecraft client,
+            AbstractContainerMenu handler,
+            boolean includeHotbar
+    ) {
+        for (Slot slot : handler.slots) {
+            ItemStack cursorStack = handler.getCursorStack();
+            if (cursorStack.isEmpty()) {
+                return;
+            }
+            if (!isAllowedPlayerDestination(slot, includeHotbar)) {
+                continue;
+            }
+            ItemStack destination = slot.getItem();
+            if (destination.isEmpty()
+                    || !ItemStack.areItemsAndComponentsEqual(cursorStack, destination)
+                    || destination.getCount() >= maxInsertCount(slot, destination)
+                    || !slot.canInsert(cursorStack)) {
+                continue;
+            }
+            pickup(client, handler, slot.id);
+        }
+    }
+
+    private static void moveCursorIntoEmptyPlayerSlots(
+            Minecraft client,
+            AbstractContainerMenu handler,
+            boolean includeHotbar
+    ) {
+        for (Slot slot : handler.slots) {
+            ItemStack cursorStack = handler.getCursorStack();
+            if (cursorStack.isEmpty()) {
+                return;
+            }
+            if (!isAllowedPlayerDestination(slot, includeHotbar)
+                    || !slot.getItem().isEmpty()
+                    || !slot.canInsert(cursorStack)) {
+                continue;
+            }
+            pickup(client, handler, slot.id);
+        }
+    }
+
+    private static boolean hasInventorySpace(AbstractContainerMenu handler, ItemStack stack, boolean includeHotbar) {
+        for (Slot slot : handler.slots) {
+            if (!isAllowedPlayerDestination(slot, includeHotbar) || !slot.canInsert(stack)) {
+                continue;
+            }
+
+            ItemStack destination = slot.getItem();
+            if (destination.isEmpty()) {
+                return true;
+            }
+            if (ItemStack.areItemsAndComponentsEqual(stack, destination)
+                    && destination.getCount() < maxInsertCount(slot, destination)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAllowedPlayerDestination(Slot slot, boolean includeHotbar) {
+        if (!(slot.inventory instanceof Container)) {
+            return false;
+        }
+        return includeHotbar || slot.getIndex() >= 9;
+    }
+
+    private static int maxInsertCount(Slot slot, ItemStack stack) {
+        return Math.min(stack.getMaxCount(), slot.getMaxItemCount(stack));
+    }
+
+    private static void pickup(Minecraft client, AbstractContainerMenu handler, int slotId) {
+        client.gameMode.clickSlot(handler.syncId, slotId, 0, ClickType.PICKUP, client.player);
     }
 
     private static boolean isInCategory(ItemStack stack, String categoryId) {
@@ -362,18 +684,74 @@ public final class ContainerTagButtonManager {
                 .orElse(false);
     }
 
-    private static void showMoveOverlay(MinecraftClient client, String key, int movedStacks) {
+    private static void showMoveOverlay(Minecraft client, String key, int movedStacks) {
+        showMoveOverlay(client, Component.translatable(key, movedStacks));
+    }
+
+    private static void showMoveOverlay(Minecraft client, Component text) {
         if (client.inGameHud == null) {
             return;
         }
-        client.inGameHud.setOverlayMessage(Text.translatable(key, movedStacks), false);
+        client.inGameHud.setOverlayMessage(text, false);
     }
 
-    private record ButtonRegistration(
-            ButtonWidget button,
-            ButtonWidget moveDownButton,
-            ButtonWidget moveUpButton,
-            Optional<ChestKey> target
-    ) {
+    private static final class ButtonRegistration {
+        private final Button button;
+        private final Button detectedButton;
+        private final Button moveDownButton;
+        private final Button moveUpButton;
+        private final Optional<ChestKey> target;
+        private Optional<Category> currentCategory = Optional.empty();
+        private Optional<Category> detectedCategory = Optional.empty();
+
+        private ButtonRegistration(
+                Button button,
+                Button detectedButton,
+                Button moveDownButton,
+                Button moveUpButton,
+                Optional<ChestKey> target
+        ) {
+            this.button = button;
+            this.detectedButton = detectedButton;
+            this.moveDownButton = moveDownButton;
+            this.moveUpButton = moveUpButton;
+            this.target = target;
+        }
+
+        private Button button() {
+            return button;
+        }
+
+        private Button detectedButton() {
+            return detectedButton;
+        }
+
+        private Button moveDownButton() {
+            return moveDownButton;
+        }
+
+        private Button moveUpButton() {
+            return moveUpButton;
+        }
+
+        private Optional<ChestKey> target() {
+            return target;
+        }
+
+        private Optional<Category> currentCategory() {
+            return currentCategory;
+        }
+
+        private void setCurrentCategory(Optional<Category> currentCategory) {
+            this.currentCategory = currentCategory == null ? Optional.empty() : currentCategory;
+        }
+
+        private Optional<Category> detectedCategory() {
+            return detectedCategory;
+        }
+
+        private void setDetectedCategory(Optional<Category> detectedCategory) {
+            this.detectedCategory = detectedCategory == null ? Optional.empty() : detectedCategory;
+        }
     }
 }

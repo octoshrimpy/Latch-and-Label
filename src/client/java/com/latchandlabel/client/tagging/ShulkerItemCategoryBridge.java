@@ -1,24 +1,26 @@
 package com.latchandlabel.client.tagging;
 
+import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import net.fabricmc.fabric.api.event.client.player.ClientPlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ContainerComponent;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,13 +36,18 @@ public final class ShulkerItemCategoryBridge {
     private static final long PENDING_BREAK_TTL_MS = 3_000L;
     private static final long PENDING_PLACEMENT_TTL_MS = 1_500L;
     private static final int MAX_FINGERPRINT_MAPPINGS = 4_096;
+    private static final int MAX_PENDING = 256;
+    private static final long CAP_WARN_INTERVAL_MS = 60_000L;
+    private static long lastBreaksCapWarnMs = 0;
+    private static long lastPlacementsCapWarnMs = 0;
 
-    private static final Map<String, String> CATEGORY_BY_FINGERPRINT = new LinkedHashMap<>(128, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-            return size() > MAX_FINGERPRINT_MAPPINGS;
-        }
-    };
+    private static final Map<String, String> CATEGORY_BY_FINGERPRINT =
+            Collections.synchronizedMap(new LinkedHashMap<>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                    return size() > MAX_FINGERPRINT_MAPPINGS;
+                }
+            });
     private static final ArrayDeque<PendingBreak> PENDING_BREAKS = new ArrayDeque<>();
     private static final ArrayDeque<PendingPlacement> PENDING_PLACEMENTS = new ArrayDeque<>();
 
@@ -56,33 +63,41 @@ public final class ShulkerItemCategoryBridge {
         });
 
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            if (!world.isClient() || player == null || hitResult == null) {
-                return ActionResult.PASS;
+            if (!world.isClientSide() || player == null || hitResult == null) {
+                return InteractionResult.PASS;
             }
 
             ItemStack handStack = player.getStackInHand(hand);
             if (!isShulkerItem(handStack)) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
 
             resolveCategoryIdForStack(handStack).ifPresent(categoryId -> {
-                BlockPos placementPos = resolvePlacementPos(world, hitResult.getBlockPos(), hitResult.getSide());
+                BlockPos placementPos = resolvePlacementPos(world, hitResult.getBlockPos(), hitResult.getDirection());
                 boolean wasShulkerAtTarget = world.getBlockState(placementPos).getBlock() instanceof ShulkerBoxBlock;
+                long nowMs = System.currentTimeMillis();
+                if (PENDING_PLACEMENTS.size() >= MAX_PENDING) {
+                    if (nowMs - lastPlacementsCapWarnMs > CAP_WARN_INTERVAL_MS) {
+                        LatchLabel.LOGGER.warn("[ShulkerBridge] PENDING_PLACEMENTS overflow, dropping oldest entry");
+                        lastPlacementsCapWarnMs = nowMs;
+                    }
+                    PENDING_PLACEMENTS.pollFirst();
+                }
                 PENDING_PLACEMENTS.addLast(new PendingPlacement(
-                        world.getRegistryKey().getValue(),
+                        world.dimension().location(),
                         placementPos.toImmutable(),
                         categoryId,
                         wasShulkerAtTarget,
-                        System.currentTimeMillis()
+                        nowMs
                 ));
             });
 
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
     }
 
-    public static void onClientTick(MinecraftClient client) {
-        if (client == null || client.player == null || client.world == null) {
+    public static void onClientTick(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
             PENDING_BREAKS.clear();
             PENDING_PLACEMENTS.clear();
             return;
@@ -105,31 +120,39 @@ public final class ShulkerItemCategoryBridge {
         return Optional.ofNullable(CATEGORY_BY_FINGERPRINT.get(fingerprint));
     }
 
-    private static void onShulkerBroken(World world, BlockPos pos, BlockState state) {
+    private static void onShulkerBroken(Level world, BlockPos pos, BlockState state) {
         if (!(state.getBlock() instanceof ShulkerBoxBlock)) {
             return;
         }
 
-        ChestKey key = new ChestKey(world.getRegistryKey().getValue(), pos.toImmutable());
+        ChestKey key = new ChestKey(world.dimension().location(), pos.toImmutable());
         Optional<String> categoryId = LatchLabelClientState.tagStore().getTag(key);
         if (categoryId.isEmpty()) {
             return;
         }
         LatchLabelClientState.tagStore().clearTag(key);
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) {
             return;
         }
 
+        long nowMs = System.currentTimeMillis();
+        if (PENDING_BREAKS.size() >= MAX_PENDING) {
+            if (nowMs - lastBreaksCapWarnMs > CAP_WARN_INTERVAL_MS) {
+                LatchLabel.LOGGER.warn("[ShulkerBridge] PENDING_BREAKS overflow, dropping oldest entry");
+                lastBreaksCapWarnMs = nowMs;
+            }
+            PENDING_BREAKS.pollFirst();
+        }
         PENDING_BREAKS.addLast(new PendingBreak(
                 categoryId.get(),
                 snapshotShulkerInventoryCounts(client),
-                System.currentTimeMillis()
+                nowMs
         ));
     }
 
-    private static void processPendingBreaks(MinecraftClient client, long now) {
+    private static void processPendingBreaks(Minecraft client, long now) {
         if (PENDING_BREAKS.isEmpty()) {
             return;
         }
@@ -152,8 +175,8 @@ public final class ShulkerItemCategoryBridge {
         }
     }
 
-    private static void processPendingPlacements(MinecraftClient client, long now) {
-        if (PENDING_PLACEMENTS.isEmpty() || client.world == null) {
+    private static void processPendingPlacements(Minecraft client, long now) {
+        if (PENDING_PLACEMENTS.isEmpty() || client.level == null) {
             return;
         }
 
@@ -164,12 +187,12 @@ public final class ShulkerItemCategoryBridge {
                 continue;
             }
 
-            if (!Objects.equals(pending.dimensionId(), client.world.getRegistryKey().getValue())) {
+            if (!Objects.equals(pending.dimensionId(), client.level.dimension().location())) {
                 PENDING_PLACEMENTS.removeFirst();
                 continue;
             }
 
-            boolean isShulkerNow = client.world.getBlockState(pending.pos()).getBlock() instanceof ShulkerBoxBlock;
+            boolean isShulkerNow = client.level.getBlockState(pending.pos()).getBlock() instanceof ShulkerBoxBlock;
             if (!isShulkerNow) {
                 break;
             }
@@ -178,13 +201,13 @@ public final class ShulkerItemCategoryBridge {
                 continue;
             }
 
-            StorageKeyResolver.resolveForWorld(client.world, pending.pos())
+            StorageKeyResolver.resolveForWorld(client.level, pending.pos())
                     .ifPresent(key -> LatchLabelClientState.tagStore().setTag(key, pending.categoryId()));
             PENDING_PLACEMENTS.removeFirst();
         }
     }
 
-    private static BlockPos resolvePlacementPos(World world, BlockPos hitPos, net.minecraft.util.math.Direction side) {
+    private static BlockPos resolvePlacementPos(Level world, BlockPos hitPos, net.minecraft.core.Direction side) {
         if (world == null || hitPos == null || side == null) {
             return hitPos;
         }
@@ -195,7 +218,7 @@ public final class ShulkerItemCategoryBridge {
         return hitPos.offset(side);
     }
 
-    private static Map<String, Integer> snapshotShulkerInventoryCounts(MinecraftClient client) {
+    private static Map<String, Integer> snapshotShulkerInventoryCounts(Minecraft client) {
         Map<String, Integer> counts = new HashMap<>();
         if (client == null || client.player == null) {
             return counts;
@@ -203,7 +226,7 @@ public final class ShulkerItemCategoryBridge {
 
         var inventory = client.player.getInventory();
         for (int i = 0; i < inventory.size(); i++) {
-            ItemStack stack = inventory.getStack(i);
+            ItemStack stack = inventory.getItem(i);
             if (!isShulkerItem(stack) || stack.isEmpty()) {
                 continue;
             }
@@ -246,13 +269,14 @@ public final class ShulkerItemCategoryBridge {
             return null;
         }
 
-        Identifier itemId = Registries.ITEM.getId(stack.getItem());
+        var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
         if (itemId == null) {
             return null;
         }
 
         StringBuilder fingerprint = new StringBuilder(itemId.toString());
-        ContainerComponent container = stack.get(DataComponentTypes.CONTAINER);
+        ItemContainerContents container = stack.get(DataComponents.CONTAINER);
         if (container != null) {
             String joined = container.streamNonEmpty()
                     .map(ShulkerItemCategoryBridge::fingerprintContainedStack)
@@ -261,14 +285,15 @@ public final class ShulkerItemCategoryBridge {
                     .orElse("");
             fingerprint.append("|c=").append(joined);
         }
-        if (stack.get(DataComponentTypes.CUSTOM_NAME) != null) {
-            fingerprint.append("|n=").append(stack.get(DataComponentTypes.CUSTOM_NAME).getString());
+        if (stack.get(DataComponents.CUSTOM_NAME) != null) {
+            fingerprint.append("|n=").append(stack.get(DataComponents.CUSTOM_NAME).getString());
         }
         return fingerprint.toString();
     }
 
     private static String fingerprintContainedStack(ItemStack stack) {
-        Identifier itemId = Registries.ITEM.getId(stack.getItem());
+        var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
         if (itemId == null) {
             return "unknown:0";
         }
@@ -279,7 +304,7 @@ public final class ShulkerItemCategoryBridge {
     }
 
     private record PendingPlacement(
-            Identifier dimensionId,
+            ResourceLocation dimensionId,
             BlockPos pos,
             String categoryId,
             boolean wasShulkerAtTarget,

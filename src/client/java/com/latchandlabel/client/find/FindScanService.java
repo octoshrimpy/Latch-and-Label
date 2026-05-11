@@ -6,46 +6,45 @@ import com.latchandlabel.client.tagging.ContainerScreenContextResolver;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.TrackableStorage;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class FindScanService {
     private static final int MAX_SCANNED_CONTAINERS = 512;
     private static final long OBSERVED_CACHE_TTL_MS = 5 * 60_000L;
     private static final int OBSERVED_CACHE_MAX_ENTRIES = 1024;
-    private static final java.util.Map<ChestKey, ObservedContainerContents> OBSERVED_CONTAINERS = new HashMap<>();
+    private static final Map<ChestKey, ObservedContainerContents> OBSERVED_CONTAINERS = new ConcurrentHashMap<>();
 
-    public List<FindMatch> scan(MinecraftClient client, Item targetItem, Set<Item> matchSet, int radius) {
-        if (client == null || client.world == null || client.player == null) {
+    public List<FindMatch> scan(Minecraft client, Item targetItem, Set<Item> matchSet, int radius) {
+        if (client == null || client.level == null || client.player == null) {
             return List.of();
         }
 
-        World world = client.world;
-        PlayerEntity player = client.player;
-        Identifier dimensionId = world.getRegistryKey().getValue();
+        Level world = client.level;
+        Player player = client.player;
+        ResourceLocation dimensionId = world.dimension().location();
         double maxDistanceSq = (double) radius * radius;
         String targetCategoryId = LatchLabelClientState.itemCategoryMappingService()
-                .categoryIdFor(Registries.ITEM.getId(targetItem))
+                .categoryIdFor(BuiltInRegistries.ITEM.getKey(targetItem).location())
                 .orElse(null);
         Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
         cacheOpenScreenContents(client, currentScreenChestKey);
@@ -66,14 +65,14 @@ public final class FindScanService {
             BlockPos pos = chestKey.pos();
             BlockEntity blockEntity = world.getBlockEntity(pos);
             MatchType matchType = resolveMatchType(client, currentScreenChestKey, chestKey, blockEntity, targetItem, matchSet, targetCategoryId);
-            if (blockEntity instanceof Inventory inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
+            if (blockEntity instanceof Container inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
                 scanned++;
             }
             if (matchType == MatchType.NONE) {
                 continue;
             }
 
-            double distance = Math.sqrt(player.squaredDistanceTo(
+            double distance = Math.sqrt(player.distanceToSqr(
                     pos.getX() + 0.5,
                     pos.getY() + 0.5,
                     pos.getZ() + 0.5
@@ -90,20 +89,20 @@ public final class FindScanService {
 
     private static boolean isCandidateInScope(
             ChestKey chestKey,
-            Identifier dimensionId,
-            PlayerEntity player,
+            ResourceLocation dimensionId,
+            Player player,
             double maxDistanceSq,
-            World world
+            Level world
     ) {
         if (!chestKey.dimensionId().equals(dimensionId)) {
             return false;
         }
         BlockPos pos = chestKey.pos();
-        return isWithinRange(player, pos, maxDistanceSq) && world.isChunkLoaded(pos);
+        return isWithinRange(player, pos, maxDistanceSq) && world.hasChunkAt(pos);
     }
 
     private static MatchType resolveMatchType(
-            MinecraftClient client,
+            Minecraft client,
             Optional<ChestKey> currentScreenChestKey,
             ChestKey chestKey,
             BlockEntity blockEntity,
@@ -112,7 +111,7 @@ public final class FindScanService {
             String targetCategoryId
     ) {
         MatchType matchType = MatchType.NONE;
-        if (blockEntity instanceof Inventory inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
+        if (blockEntity instanceof Container inventory && TrackableStorage.isTrackableStorage(blockEntity)) {
             matchType = detectMatchType(inventory, targetItem, matchSet);
         }
         if (matchType == MatchType.NONE) {
@@ -127,14 +126,14 @@ public final class FindScanService {
         return matchType;
     }
 
-    public List<FindMatch> scanByTag(MinecraftClient client, String categoryId, int radius) {
-        if (client == null || client.world == null || client.player == null) {
+    public List<FindMatch> scanByTag(Minecraft client, String categoryId, int radius) {
+        if (client == null || client.level == null || client.player == null) {
             return List.of();
         }
 
-        World world = client.world;
-        PlayerEntity player = client.player;
-        Identifier dimensionId = world.getRegistryKey().getValue();
+        Level world = client.level;
+        Player player = client.player;
+        ResourceLocation dimensionId = world.dimension().location();
         double maxDistanceSq = (double) radius * radius;
         Optional<ChestKey> currentScreenChestKey = resolveCurrentScreenChestKey(client);
         cacheOpenScreenContents(client, currentScreenChestKey);
@@ -155,7 +154,7 @@ public final class FindScanService {
                 continue;
             }
             BlockPos pos = chestKey.pos();
-            double distance = Math.sqrt(player.squaredDistanceTo(
+            double distance = Math.sqrt(player.distanceToSqr(
                     pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
             matches.add(new FindMatch(chestKey, MatchType.POSSIBLE, distance));
         }
@@ -172,7 +171,7 @@ public final class FindScanService {
         return (System.currentTimeMillis() - entry.observedAtEpochMs()) <= OBSERVED_CACHE_TTL_MS;
     }
 
-    public static void onClientTick(MinecraftClient client) {
+    public static void onClientTick(Minecraft client) {
         if (client == null) {
             return;
         }
@@ -180,14 +179,14 @@ public final class FindScanService {
         pruneObservedCache();
     }
 
-    private static Optional<ChestKey> resolveCurrentScreenChestKey(MinecraftClient client) {
+    private static Optional<ChestKey> resolveCurrentScreenChestKey(Minecraft client) {
         if (client.currentScreen == null) {
             return Optional.empty();
         }
         return ContainerScreenContextResolver.resolve(client, client.currentScreen);
     }
 
-    private static void cacheOpenScreenContents(MinecraftClient client, Optional<ChestKey> currentScreenChestKey) {
+    private static void cacheOpenScreenContents(Minecraft client, Optional<ChestKey> currentScreenChestKey) {
         if (client.player == null) {
             return;
         }
@@ -196,12 +195,12 @@ public final class FindScanService {
         }
 
         Set<Item> observedItems = new LinkedHashSet<>();
-        for (var slot : client.player.currentScreenHandler.slots) {
-            if (slot.inventory instanceof PlayerInventory) {
+        for (var slot : client.player.containerMenu.slots) {
+            if (slot.inventory instanceof Container) {
                 continue;
             }
 
-            ItemStack stack = slot.getStack();
+            ItemStack stack = slot.getItem();
             if (stack.isEmpty()) {
                 continue;
             }
@@ -230,12 +229,12 @@ public final class FindScanService {
         oldestKeys.forEach(OBSERVED_CONTAINERS::remove);
     }
 
-    private static Set<ChestKey> candidateContainers(MinecraftClient client, int radius, Optional<ChestKey> currentScreenChestKey) {
-        if (client == null || client.world == null || client.player == null) {
+    private static Set<ChestKey> candidateContainers(Minecraft client, int radius, Optional<ChestKey> currentScreenChestKey) {
+        if (client == null || client.level == null || client.player == null) {
             return Set.of();
         }
 
-        Set<ChestKey> candidates = new LinkedHashSet<>(nearbyInventoryContainers(client.world, client.player, radius));
+        Set<ChestKey> candidates = new LinkedHashSet<>(nearbyInventoryContainers(client.level, client.player, radius));
         candidates.addAll(OBSERVED_CONTAINERS.keySet());
         candidates.addAll(LatchLabelClientState.tagStore().snapshotTags().keySet());
         ContainerInteractionTracker.getRecent().ifPresent(candidates::add);
@@ -243,7 +242,7 @@ public final class FindScanService {
         return candidates;
     }
 
-    private static Set<ChestKey> nearbyInventoryContainers(World world, PlayerEntity player, int searchRadius) {
+    private static Set<ChestKey> nearbyInventoryContainers(Level world, Player player, int searchRadius) {
         int minChunkX = Math.floorDiv((int) Math.floor(player.getX() - searchRadius), 16);
         int maxChunkX = Math.floorDiv((int) Math.floor(player.getX() + searchRadius), 16);
         int minChunkZ = Math.floorDiv((int) Math.floor(player.getZ() - searchRadius), 16);
@@ -253,7 +252,7 @@ public final class FindScanService {
         Set<ChestKey> discovered = new LinkedHashSet<>();
         for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
             for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!world.isChunkLoaded(chunkX, chunkZ)) {
+                if (!world.hasChunkAt(chunkX, chunkZ)) {
                     continue;
                 }
 
@@ -279,15 +278,15 @@ public final class FindScanService {
         return discovered;
     }
 
-    private static boolean isWithinRange(PlayerEntity player, BlockPos pos, double maxDistanceSq) {
-        return player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= maxDistanceSq;
+    private static boolean isWithinRange(Player player, BlockPos pos, double maxDistanceSq) {
+        return player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= maxDistanceSq;
     }
 
-    private static MatchType detectMatchType(Inventory inventory, Item targetItem, Set<Item> matchSet) {
+    private static MatchType detectMatchType(Container inventory, Item targetItem, Set<Item> matchSet) {
         boolean variantFound = false;
 
         for (int slot = 0; slot < inventory.size(); slot++) {
-            ItemStack stack = inventory.getStack(slot);
+            ItemStack stack = inventory.getItem(slot);
             if (stack.isEmpty()) {
                 continue;
             }
@@ -304,7 +303,7 @@ public final class FindScanService {
     }
 
     private static MatchType detectMatchTypeFromOpenScreen(
-            MinecraftClient client,
+            Minecraft client,
             Optional<ChestKey> currentScreenChestKey,
             ChestKey chestKey,
             Item targetItem,
@@ -317,14 +316,14 @@ public final class FindScanService {
             return MatchType.NONE;
         }
 
-        ScreenHandler handler = client.player.currentScreenHandler;
+        AbstractContainerMenu handler = client.player.containerMenu;
         boolean variantFound = false;
         for (var slot : handler.slots) {
-            if (slot.inventory instanceof PlayerInventory) {
+            if (slot.inventory instanceof Container) {
                 continue;
             }
 
-            ItemStack stack = slot.getStack();
+            ItemStack stack = slot.getItem();
             if (stack.isEmpty()) {
                 continue;
             }

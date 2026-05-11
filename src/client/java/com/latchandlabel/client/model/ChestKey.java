@@ -1,7 +1,7 @@
 package com.latchandlabel.client.model;
 
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -11,7 +11,7 @@ import java.util.Objects;
  * Serializes to/from a pipe-delimited string (e.g. {@code minecraft:overworld|10,64,-30})
  * for JSON persistence, with legacy support for saves that omitted the namespace.
  */
-public record ChestKey(Identifier dimensionId, BlockPos pos) {
+public record ChestKey(ResourceLocation dimensionId, BlockPos pos) {
     private static final String DELIMITER = "|";
     private static final String COORD_DELIMITER = ",";
     private static final String VANILLA_NAMESPACE = "minecraft";
@@ -37,7 +37,7 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
             throw new IllegalArgumentException("Invalid chest key format: " + raw);
         }
 
-        Identifier dimensionId = parseDimensionId(keyParts[0]);
+        ResourceLocation dimensionId = parseDimensionId(keyParts[0]);
         if (dimensionId == null) {
             throw new IllegalArgumentException("Invalid dimension identifier in chest key: " + raw);
         }
@@ -57,11 +57,11 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
         }
     }
 
-    private static String serializeDimensionId(Identifier id) {
+    private static String serializeDimensionId(ResourceLocation id) {
         return id.getNamespace() + ":" + id.getPath();
     }
 
-    private static Identifier parseDimensionId(String rawDimensionId) {
+    private static ResourceLocation parseDimensionId(String rawDimensionId) {
         if (rawDimensionId == null) {
             return null;
         }
@@ -71,12 +71,12 @@ public record ChestKey(Identifier dimensionId, BlockPos pos) {
             return null;
         }
 
-        Identifier parsed = Identifier.tryParse(normalized);
+        ResourceLocation parsed = ResourceLocation.tryParse(normalized);
         if (parsed != null) {
             return parsed;
         }
 
         // Legacy support for older saves that stored only the dimension path.
-        return Identifier.tryParse(VANILLA_NAMESPACE + ":" + normalized);
+        return ResourceLocation.tryParse(VANILLA_NAMESPACE + ":" + normalized);
     }
 }

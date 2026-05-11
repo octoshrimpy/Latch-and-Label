@@ -1,14 +1,14 @@
 package com.latchandlabel.client.tooltip;
 
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemGroups;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,7 +17,7 @@ import java.util.Objects;
 import java.util.Set;
 
 public final class ItemCategoryMappings {
-    private static final Identifier AIR_ITEM_ID = Registries.ITEM.getId(Items.AIR);
+    private static final ResourceLocation AIR_ITEM_ID = BuiltInRegistries.ITEM.getKey(Items.AIR).location();
     private static boolean flowerTagChecksAvailable = true;
     private static final Set<String> STONE_TOKENS = Set.of(
             "stone", "cobblestone", "deepslate", "tuff", "calcite",
@@ -120,8 +120,8 @@ public final class ItemCategoryMappings {
     private ItemCategoryMappings() {
     }
 
-    public static Map<Identifier, String> createDefaults() {
-        Map<Identifier, String> defaults = new LinkedHashMap<>();
+    public static Map<ResourceLocation, String> createDefaults() {
+        Map<ResourceLocation, String> defaults = new LinkedHashMap<>();
 
         seedLegacyDefaults(defaults);
         copyCreativeTabMappings(defaults);
@@ -130,7 +130,7 @@ public final class ItemCategoryMappings {
         return Map.copyOf(defaults);
     }
 
-    private static void seedLegacyDefaults(Map<Identifier, String> defaults) {
+    private static void seedLegacyDefaults(Map<ResourceLocation, String> defaults) {
         put(defaults, "minecraft:stone", "stones");
         put(defaults, "minecraft:cobblestone", "stones");
         put(defaults, "minecraft:oak_log", "woods");
@@ -151,34 +151,36 @@ public final class ItemCategoryMappings {
         put(defaults, "minecraft:chest", "functional");
     }
 
-    private static void copyCreativeTabMappings(Map<Identifier, String> defaults) {
-        List<Map.Entry<RegistryKey<ItemGroup>, String>> creativeTabToCategory = List.of(
-                Map.entry(ItemGroups.FOOD_AND_DRINK, "food_brewing"),
-                Map.entry(ItemGroups.COMBAT, "gear_utility"),
-                Map.entry(ItemGroups.TOOLS, "gear_utility"),
-                Map.entry(ItemGroups.REDSTONE, "redstone_mechanisms"),
-                Map.entry(ItemGroups.FUNCTIONAL, "functional"),
-                Map.entry(ItemGroups.BUILDING_BLOCKS, "stones"),
-                Map.entry(ItemGroups.COLORED_BLOCKS, "decorative"),
-                Map.entry(ItemGroups.NATURAL, "plants_natural"),
-                Map.entry(ItemGroups.INGREDIENTS, "ores_valuables"),
-                Map.entry(ItemGroups.SPAWN_EGGS, "mob_drops"),
-                Map.entry(ItemGroups.OPERATOR, "redstone_mechanisms")
+    private static void copyCreativeTabMappings(Map<ResourceLocation, String> defaults) {
+        List<Map.Entry<ResourceKey<CreativeModeTab>, String>> creativeTabToCategory = List.of(
+                Map.entry(CreativeModeTabs.FOOD_AND_DRINK, "food_brewing"),
+                Map.entry(CreativeModeTabs.COMBAT, "gear_utility"),
+                Map.entry(CreativeModeTabs.TOOLS, "gear_utility"),
+                Map.entry(CreativeModeTabs.REDSTONE, "redstone_mechanisms"),
+                Map.entry(CreativeModeTabs.FUNCTIONAL, "functional"),
+                Map.entry(CreativeModeTabs.BUILDING_BLOCKS, "stones"),
+                Map.entry(CreativeModeTabs.COLORED_BLOCKS, "decorative"),
+                Map.entry(CreativeModeTabs.NATURAL, "plants_natural"),
+                Map.entry(CreativeModeTabs.INGREDIENTS, "ores_valuables"),
+                Map.entry(CreativeModeTabs.SPAWN_EGGS, "mob_drops"),
+                Map.entry(CreativeModeTabs.OPERATOR, "redstone_mechanisms")
         );
 
-        for (Map.Entry<RegistryKey<ItemGroup>, String> creativeEntry : creativeTabToCategory) {
-            Identifier groupId = creativeEntry.getKey().getValue();
-            ItemGroup group = Registries.ITEM_GROUP.get(groupId);
+        for (Map.Entry<ResourceKey<CreativeModeTab>, String> creativeEntry : creativeTabToCategory) {
+            ResourceLocation groupId = creativeEntry.getKey().location();
+            CreativeModeTab group = BuiltInRegistries.CREATIVE_MODE_TAB.get(groupId);
             if (group == null) {
                 continue;
             }
 
+            // TODO: verify getSearchTabStacks() Mojang method name (may be getDisplayItems() or searchTabDisplayItems())
             for (ItemStack stack : group.getSearchTabStacks()) {
                 if (stack == null || stack.isEmpty()) {
                     continue;
                 }
 
-                Identifier itemId = Registries.ITEM.getId(stack.getItem());
+                var itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
+                ResourceLocation itemId = itemKey != null ? itemKey.location() : null;
                 if (itemId == null || itemId.equals(AIR_ITEM_ID)) {
                     continue;
                 }
@@ -188,8 +190,8 @@ public final class ItemCategoryMappings {
         }
     }
 
-    private static void assignAllRegistryItems(Map<Identifier, String> defaults) {
-        for (Identifier itemId : Registries.ITEM.getIds()) {
+    private static void assignAllRegistryItems(Map<ResourceLocation, String> defaults) {
+        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null || itemId.equals(AIR_ITEM_ID)) {
                 continue;
             }
@@ -198,7 +200,7 @@ public final class ItemCategoryMappings {
         }
     }
 
-    private static String remapCategory(Identifier itemId, String baseCategory) {
+    private static String remapCategory(ResourceLocation itemId, String baseCategory) {
         String path = itemId.getPath();
         String fullId = itemId.toString();
 
@@ -254,7 +256,7 @@ public final class ItemCategoryMappings {
         return baseCategory;
     }
 
-    private static String explicitCategoryOverride(Identifier itemId, String path) {
+    private static String explicitCategoryOverride(ResourceLocation itemId, String path) {
         if (path.endsWith("_button") || path.endsWith("_pressure_plate")) {
             return "redstone_mechanisms";
         }
@@ -345,10 +347,10 @@ public final class ItemCategoryMappings {
         return containsAny(path, PLANTS_NATURAL_TOKENS);
     }
 
-    private static boolean isFlower(Identifier itemId, String path) {
+    private static boolean isFlower(ResourceLocation itemId, String path) {
         if (flowerTagChecksAvailable) {
             try {
-                Item item = Registries.ITEM.get(itemId);
+                Item item = BuiltInRegistries.ITEM.get(itemId);
                 if (item != null && item != Items.AIR && item.getDefaultStack().isIn(ItemTags.FLOWERS)) {
                     return true;
                 }
@@ -387,8 +389,8 @@ public final class ItemCategoryMappings {
         return false;
     }
 
-    private static void put(Map<Identifier, String> map, String idRaw, String categoryId) {
-        Identifier id = Objects.requireNonNull(Identifier.tryParse(idRaw), "Invalid default item id: " + idRaw);
+    private static void put(Map<ResourceLocation, String> map, String idRaw, String categoryId) {
+        ResourceLocation id = Objects.requireNonNull(ResourceLocation.tryParse(idRaw), "Invalid default item id: " + idRaw);
         map.put(id, categoryId);
     }
 }

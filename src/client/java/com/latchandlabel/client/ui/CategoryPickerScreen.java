@@ -3,17 +3,18 @@ package com.latchandlabel.client.ui;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.GuiGraphics;
+// TODO: verify Click package after ./gradlew genSources — was net.minecraft.client.gui.Click in 1.21.11
 import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.input.CharInput;
 import net.minecraft.client.input.KeyInput;
-import net.minecraft.registry.Registries;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -33,8 +34,8 @@ public final class CategoryPickerScreen extends Screen {
     private static final int COLUMN_GAP = 8;
     private static final int REMOVE_BUTTON_HEIGHT = 18;
     private static final int NEW_CATEGORY_COLOR = 0x9D9D97;
-    private static final Identifier NEW_CATEGORY_ICON = Objects.requireNonNull(
-            Identifier.tryParse("minecraft:writable_book"),
+    private static final ResourceLocation NEW_CATEGORY_ICON = Objects.requireNonNull(
+            ResourceLocation.tryParse("minecraft:writable_book"),
             "Invalid default icon identifier"
     );
 
@@ -45,12 +46,12 @@ public final class CategoryPickerScreen extends Screen {
     private final Runnable onCancel;
 
     private final List<Category> filteredCategories = new ArrayList<>();
-    private TextFieldWidget searchField;
+    private EditBox searchField;
     private String pendingSelectionId;
     private boolean completed;
 
     public CategoryPickerScreen(Screen parentScreen, ChestKey chestKey, Consumer<String> onSelect, Runnable onClear, Runnable onCancel) {
-        super(Text.translatable("screen.latchlabel.category_picker.title"));
+        super(Component.translatable("screen.latchlabel.category_picker.title"));
         this.parentScreen = parentScreen;
         this.chestKey = Objects.requireNonNull(chestKey, "chestKey");
         this.onSelect = Objects.requireNonNull(onSelect, "onSelect");
@@ -63,7 +64,7 @@ public final class CategoryPickerScreen extends Screen {
         int panelLeft = (width - PANEL_WIDTH) / 2;
         int panelTop = (height - PANEL_HEIGHT) / 2;
 
-        searchField = new TextFieldWidget(textRenderer, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, Text.empty());
+        searchField = new EditBox(textRenderer, panelLeft + 10, panelTop + 22, PANEL_WIDTH - 20, 18, .Component.empty());
         searchField.setChangedListener(value -> refilter());
         searchField.setMaxLength(64);
 
@@ -75,7 +76,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xA0101010);
 
         int panelLeft = (width - PANEL_WIDTH) / 2;
@@ -86,7 +87,7 @@ public final class CategoryPickerScreen extends Screen {
         context.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xCC101010);
         context.drawStrokedRectangle(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, 0xFF3A3A3A);
 
-        context.drawTextWithShadow(textRenderer, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF);
+        context.drawString(textRenderer, title, panelLeft + 10, panelTop + 8, 0xFFFFFFFF, true);
 
         super.render(context, mouseX, mouseY, delta);
 
@@ -111,13 +112,13 @@ public final class CategoryPickerScreen extends Screen {
 
         context.fill(removeButtonLeft, removeButtonTop, removeButtonRight, removeButtonTop + REMOVE_BUTTON_HEIGHT, removeButtonFill);
         context.drawStrokedRectangle(removeButtonLeft, removeButtonTop, removeButtonRight - removeButtonLeft, REMOVE_BUTTON_HEIGHT, removeButtonStroke);
-        Text removeLabel = Text.translatable("screen.latchlabel.category_picker.remove_current");
+        Component removeLabel = Component.translatable("screen.latchlabel.category_picker.remove_current");
         int centeredTextX = removeButtonLeft + ((removeButtonRight - removeButtonLeft) - textRenderer.getWidth(removeLabel)) / 2;
-        context.drawTextWithShadow(textRenderer, removeLabel, centeredTextX, removeButtonTop + 5, removeButtonTextColor);
+        context.drawString(textRenderer, removeLabel, centeredTextX, removeButtonTop + 5, removeButtonTextColor, true);
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void renderBackground(GuiGraphics context, int mouseX, int mouseY, float delta) {
         // We draw a custom translucent background in render(); skip Screen's blur pass to avoid
         // "Can only blur once per frame" when this picker is opened over another blurred screen.
     }
@@ -272,7 +273,7 @@ public final class CategoryPickerScreen extends Screen {
     }
 
     private void drawCategoryCell(
-            DrawContext context,
+            GuiGraphics context,
             int left,
             int columnWidth,
             int listTop,
@@ -302,18 +303,18 @@ public final class CategoryPickerScreen extends Screen {
         context.fill(editButtonX, buttonTop, editButtonX + EDIT_BUTTON_WIDTH, buttonBottom, 0xFF2D2D2D);
         context.drawStrokedRectangle(editButtonX, buttonTop, EDIT_BUTTON_WIDTH, buttonBottom - buttonTop, 0xFF666666);
         if (emptySlot) {
-            context.drawTextWithShadow(textRenderer, Text.literal("+"), editButtonX + 7, y + 4, 0xFFFFFFFF);
+            context.drawString(textRenderer, Component.literal("+"), editButtonX + 7, y + 4, 0xFFFFFFFF, true);
             return;
         }
 
-        context.drawItem(new ItemStack(Items.WRITABLE_BOOK), editButtonX + 2, y + 1);
-        if (Registries.ITEM.containsId(category.iconItemId())) {
-            context.drawItem(new ItemStack(Registries.ITEM.get(category.iconItemId())), x + 10, y + 1);
+        context.renderItem(new ItemStack(Items.WRITABLE_BOOK), editButtonX + 2, y + 1);
+        if (BuiltInRegistries.ITEM.containsKey(category.iconItemId())) {
+            context.renderItem(new ItemStack(BuiltInRegistries.ITEM.get(category.iconItemId())), x + 10, y + 1);
         }
 
         int maxNameWidth = (editButtonX - 6) - (x + 30);
         String trimmedName = textRenderer.trimToWidth(category.name(), Math.max(0, maxNameWidth));
-        context.drawTextWithShadow(textRenderer, Text.literal(trimmedName), x + 30, y + 4, 0xFFFFFFFF);
+        context.drawString(textRenderer, Component.literal(trimmedName), x + 30, y + 4, 0xFFFFFFFF, true);
     }
 
     private static boolean isCellHit(double mouseX, double mouseY, int left, int y, int right) {
@@ -346,7 +347,7 @@ public final class CategoryPickerScreen extends Screen {
 
     private void createCategoryAndOpenEditor() {
         Category created = LatchLabelClientState.categoryStore()
-                .createCategory(Text.translatable("screen.latchlabel.category_picker.new_category_name").getString(), NEW_CATEGORY_COLOR, NEW_CATEGORY_ICON);
+                .createCategory(Component.translatable("screen.latchlabel.category_picker.new_category_name").getString(), NEW_CATEGORY_COLOR, NEW_CATEGORY_ICON);
         refilter();
         if (client != null) {
             client.setScreen(new CategoryItemMappingScreen(this, created));

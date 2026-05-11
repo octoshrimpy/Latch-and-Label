@@ -1,12 +1,14 @@
 package com.latchandlabel.client.data;
 
+import com.latchandlabel.client.LatchLabel;
+import com.latchandlabel.client.config.MultiplayerWorldProfileSettings;
 import com.latchandlabel.client.store.TagStore;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.ServerInfo;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.server.integrated.IntegratedServer;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,37 +29,67 @@ public final class TagScopeResolver {
     private static final String LEGACY_SINGLEPLAYER_PREFIX = "sp:";
     private static final String WORLD_SCOPE_SUFFIX_PREFIX = "_w1_";
     private static final String LEGACY_WORLD_SCOPE_SUFFIX_PREFIX = "|w1:";
+    private static final String PROFILE_SCOPE_SUFFIX_PREFIX = "_profile_";
+
+    /** Cached primary scope ID from last logged resolution, to avoid per-tick log spam. */
+    private static volatile String lastLoggedScopeId = null;
 
     private TagScopeResolver() {
     }
 
-    public static String resolveCurrentScopeId(MinecraftClient client) {
+    public static String resolveCurrentScopeId(Minecraft client) {
         return resolveCurrentScope(client).primaryScopeId();
     }
 
-    public static ResolvedScope resolveCurrentScope(MinecraftClient client) {
+    public static ResolvedScope resolveCurrentScope(Minecraft client) {
         if (client == null) {
             return new ResolvedScope(TagStore.DEFAULT_SCOPE_ID, List.of());
         }
 
         BaseScope baseScope = resolveBaseScope(client);
+        String primaryScopeId = baseScope.primaryScopeId();
+        LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
+
+        if (baseScope.multiplayer()) {
+            String profileName = MultiplayerWorldProfileSettings.profileForServerScope(baseScope.primaryScopeId()).orElse(null);
+            if (profileName != null) {
+                fallbacks.add(baseScope.primaryScopeId());
+                primaryScopeId = baseScope.primaryScopeId() + PROFILE_SCOPE_SUFFIX_PREFIX + profileName;
+            }
+        }
 
         String worldDiscriminator = resolveWorldDiscriminator(client);
+        ResolvedScope result;
         if (worldDiscriminator == null) {
-            return new ResolvedScope(baseScope.primaryScopeId(), baseScope.fallbackScopeIds());
+            fallbacks.addAll(baseScope.fallbackScopeIds());
+            fallbacks.remove(primaryScopeId);
+            result = new ResolvedScope(primaryScopeId, List.copyOf(fallbacks));
+        } else {
+            // Backward-compatibility: older releases used world-discriminated scope ids.
+            fallbacks.add(baseScope.primaryScopeId() + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+            for (String fallbackBaseScopeId : baseScope.fallbackScopeIds()) {
+                fallbacks.add(fallbackBaseScopeId + WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+                fallbacks.add(fallbackBaseScopeId + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+            }
+            fallbacks.addAll(baseScope.fallbackScopeIds());
+            fallbacks.remove(primaryScopeId);
+            result = new ResolvedScope(primaryScopeId, List.copyOf(fallbacks));
         }
 
-        LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
-        // Backward-compatibility: older releases used world-discriminated scope ids.
-        fallbacks.add(baseScope.primaryScopeId() + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
-        for (String fallbackBaseScopeId : baseScope.fallbackScopeIds()) {
-            fallbacks.add(fallbackBaseScopeId + WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
-            fallbacks.add(fallbackBaseScopeId + LEGACY_WORLD_SCOPE_SUFFIX_PREFIX + worldDiscriminator);
+        if (!result.primaryScopeId().equals(lastLoggedScopeId)) {
+            LatchLabel.LOGGER.debug("[ScopeResolver] scope changed to primary={} fallbacks={}",
+                    result.primaryScopeId(), result.fallbackReadScopeIds().size());
+            lastLoggedScopeId = result.primaryScopeId();
         }
-        fallbacks.addAll(baseScope.fallbackScopeIds());
-        String primaryScopeId = baseScope.primaryScopeId();
-        fallbacks.remove(primaryScopeId);
-        return new ResolvedScope(primaryScopeId, List.copyOf(fallbacks));
+        return result;
+    }
+
+    public static String resolveCurrentMultiplayerServerScopeId(Minecraft client) {
+        if (client == null || client.isInSingleplayer()) {
+            return null;
+        }
+        BaseScope multiplayer = resolveMultiplayerBaseScope(client);
+        return multiplayer == null ? null : multiplayer.primaryScopeId();
     }
 
     public record ResolvedScope(String primaryScopeId, List<String> fallbackReadScopeIds) {
@@ -69,9 +101,9 @@ public final class TagScopeResolver {
         }
     }
 
-    private static BaseScope resolveBaseScope(MinecraftClient client) {
+    private static BaseScope resolveBaseScope(Minecraft client) {
         if (client == null) {
-            return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of());
+            return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of(), false);
         }
         if (client.isInSingleplayer()) {
             return resolveSingleplayerBaseScope(client);
@@ -81,10 +113,10 @@ public final class TagScopeResolver {
         if (multiplayer != null) {
             return multiplayer;
         }
-        return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of());
+        return new BaseScope(TagStore.DEFAULT_SCOPE_ID, List.of(), false);
     }
 
-    private static BaseScope resolveSingleplayerBaseScope(MinecraftClient client) {
+    private static BaseScope resolveSingleplayerBaseScope(Minecraft client) {
         String worldId = "unknown";
         IntegratedServer integratedServer = client.getServer();
         if (integratedServer != null) {
@@ -98,18 +130,18 @@ public final class TagScopeResolver {
         LinkedHashSet<String> fallbacks = new LinkedHashSet<>();
         fallbacks.add(LEGACY_SINGLEPLAYER_PREFIX + worldId);
         fallbacks.add(TagStore.DEFAULT_SCOPE_ID);
-        return new BaseScope(primary, List.copyOf(fallbacks));
+        return new BaseScope(primary, List.copyOf(fallbacks), false);
     }
 
-    private static BaseScope resolveMultiplayerBaseScope(MinecraftClient client) {
+    private static BaseScope resolveMultiplayerBaseScope(Minecraft client) {
         List<String> rawCandidates = new ArrayList<>();
 
-        ServerInfo serverEntry = client.getCurrentServerEntry();
+        ServerData serverEntry = client.getCurrentServerEntry();
         if (serverEntry != null && serverEntry.address != null && !serverEntry.address.isBlank()) {
             rawCandidates.add(serverEntry.address);
         }
 
-        ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
+        ClientPacketListener networkHandler = client.getConnection();
         if (networkHandler != null && networkHandler.getConnection() != null && networkHandler.getConnection().getAddress() != null) {
             rawCandidates.add(networkHandler.getConnection().getAddress().toString());
         }
@@ -141,7 +173,7 @@ public final class TagScopeResolver {
         }
         fallbacks.add(TagStore.DEFAULT_SCOPE_ID);
         fallbacks.remove(primary);
-        return new BaseScope(primary, List.copyOf(fallbacks));
+        return new BaseScope(primary, List.copyOf(fallbacks), true);
     }
 
     private static String normalize(String value) {
@@ -223,17 +255,17 @@ public final class TagScopeResolver {
         }
     }
 
-    private static String resolveWorldDiscriminator(MinecraftClient client) {
+    private static String resolveWorldDiscriminator(Minecraft client) {
         if (client == null) {
             return null;
         }
-        ClientWorld world = client.world;
+        ClientLevel world = client.level;
         if (world == null) {
             return null;
         }
 
         StringBuilder raw = new StringBuilder(96);
-        raw.append("dim=").append(world.getRegistryKey().getValue());
+        raw.append("dim=").append(world.dimension().location());
         raw.append(";bottom=").append(world.getBottomY());
         raw.append(";height=").append(world.getHeight());
         raw.append(";sea=").append(world.getSeaLevel());
@@ -242,14 +274,14 @@ public final class TagScopeResolver {
             raw.append(";sky=").append(world.getDimension().hasSkyLight());
             raw.append(";ceiling=").append(world.getDimension().hasCeiling());
             raw.append(";coord=").append(world.getDimension().coordinateScale());
-        } catch (Exception ignored) {
-            // Best-effort fingerprint: keep working across mapping/API differences.
+        } catch (Exception e) {
+            LatchLabel.LOGGER.warn("[ScopeResolver] Partial dimension fingerprint due to: {}", e.getMessage());
         }
 
         return normalize(raw.toString());
     }
 
-    private record BaseScope(String primaryScopeId, List<String> fallbackScopeIds) {
+    private record BaseScope(String primaryScopeId, List<String> fallbackScopeIds, boolean multiplayer) {
     }
 
     private record AddressParts(String host, int port) {

@@ -3,12 +3,12 @@ package com.latchandlabel.client.tagging;
 import com.latchandlabel.client.targeting.ContainerTargeting;
 import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.model.ChestKey;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.screen.ScreenHandler;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 
 import java.util.Optional;
 
@@ -22,8 +22,8 @@ public final class ContainerScreenContextResolver {
     private ContainerScreenContextResolver() {
     }
 
-    public static Optional<ChestKey> resolve(MinecraftClient client, Screen screen) {
-        if (!isSupportedScreen(screen) || client == null || client.world == null) {
+    public static Optional<ChestKey> resolve(Minecraft client, Screen screen) {
+        if (!isSupportedScreen(screen) || client == null || client.level == null) {
             return Optional.empty();
         }
 
@@ -36,7 +36,7 @@ public final class ContainerScreenContextResolver {
         Optional<ChestKey> fromRecent = ContainerInteractionTracker.getRecent();
         if (fromRecent.isPresent()) {
             ChestKey key = fromRecent.get();
-            if (key.dimensionId().equals(client.world.getRegistryKey().getValue()) && screenHandlerMatches(client, screen)) {
+            if (key.dimensionId().equals(client.level.dimension().location()) && screenHandlerMatches(client, screen)) {
                 debug("Resolved container from recent interaction: " + key.toStringKey());
                 return Optional.of(key);
             }
@@ -47,18 +47,18 @@ public final class ContainerScreenContextResolver {
     }
 
     public static boolean isSupportedScreen(Screen screen) {
-        return screen instanceof GenericContainerScreen
+        return screen instanceof ContainerScreen
                 || screen instanceof ShulkerBoxScreen;
     }
 
-    private static boolean screenHandlerMatches(MinecraftClient client, Screen screen) {
+    private static boolean screenHandlerMatches(Minecraft client, Screen screen) {
         if (client.player == null) {
             return false;
         }
 
-        ScreenHandler activeHandler = client.player.currentScreenHandler;
-        if (screen instanceof HandledScreen<?> handledScreen) {
-            return activeHandler == handledScreen.getScreenHandler();
+        AbstractContainerMenu activeHandler = client.player.containerMenu;
+        if (screen instanceof AbstractContainerScreen<?> handledScreen) {
+            return activeHandler == handledScreen.getMenu();
         }
         return false;
     }

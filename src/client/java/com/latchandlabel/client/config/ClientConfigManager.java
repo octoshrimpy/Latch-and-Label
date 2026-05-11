@@ -18,6 +18,9 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Reads and writes the mod's JSON configuration file ({@code client_config.json}).
@@ -58,7 +61,8 @@ public final class ClientConfigManager {
             }
             root = parsed.getAsJsonObject();
         } catch (Exception e) {
-            LatchLabel.LOGGER.warn("Failed reading client config {}, rewriting defaults", configPath, e);
+            Path backup = backupCorruptFile(configPath);
+            LatchLabel.LOGGER.warn("Failed reading client config {}, backed up to {}, rewriting defaults", configPath, backup, e);
             writeDefaults();
             return;
         }
@@ -77,11 +81,16 @@ public final class ClientConfigManager {
         FindSettings.setAllowFindKeybind(asBoolean(root.get("allowFindKeybind"), true));
         FindSettings.setAutoRefreshContents(asBoolean(root.get("autoRefreshContents"), false));
         TransferSettings.setMoveSourceMode(MoveSourceMode.fromConfigValue(asString(root.get("moveSourceMode"), "inventory")));
+        ContainerDetectionSettings.setDetectedCategoryThresholdPercent(asInt(
+                root.get("detectedCategoryThresholdPercent"),
+                ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent()
+        ));
         DumpSettings.setQueueMode(asBoolean(root.get("dumpQueueMode"), false));
         DumpSettings.setDumpRange(asInt(root.get("dumpRange"), 16));
         KeybindSettings.setOpenPickerKeyCode(asInt(root.get("openPickerKeyCode"), 66));
         KeybindSettings.setFindShortcutKeyCode(asInt(root.get("findShortcutKeyCode"), -1));
         KeybindSettings.setMoveToStorageKeyCode(asInt(root.get("moveToStorageKeyCode"), -1));
+        MultiplayerWorldProfileSettings.replaceProfilesByServerScope(parseProfiles(root.get("multiplayerWorldProfiles")));
         ClientInputHandler.reloadFromSettings();
 
         LatchLabel.LOGGER.info("Reloaded client config from {}", configPath);
@@ -101,6 +110,17 @@ public final class ClientConfigManager {
         writeCurrentSettings();
     }
 
+    public void setMultiplayerWorldProfile(String serverScopeId, String profileName) {
+        MultiplayerWorldProfileSettings.setProfileForServerScope(serverScopeId, profileName);
+        writeCurrentSettings();
+    }
+
+    public boolean clearMultiplayerWorldProfile(String serverScopeId) {
+        boolean cleared = MultiplayerWorldProfileSettings.clearProfileForServerScope(serverScopeId);
+        writeCurrentSettings();
+        return cleared;
+    }
+
     private void writeDefaults() {
         InspectSettings.setInspectRange(8);
         InspectSettings.setActivationMode(InspectActivationMode.ALT_OR_SHIFT);
@@ -111,11 +131,13 @@ public final class ClientConfigManager {
         FindSettings.setAllowFindKeybind(true);
         FindSettings.setAutoRefreshContents(false);
         TransferSettings.setMoveSourceMode(MoveSourceMode.INVENTORY);
+        ContainerDetectionSettings.setDetectedCategoryThresholdPercent(ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent());
         DumpSettings.setQueueMode(false);
         DumpSettings.setDumpRange(16);
         KeybindSettings.setOpenPickerKeyCode(66);
         KeybindSettings.setFindShortcutKeyCode(-1);
         KeybindSettings.setMoveToStorageKeyCode(-1);
+        MultiplayerWorldProfileSettings.replaceProfilesByServerScope(Map.of());
         ClientInputHandler.reloadFromSettings();
         writeCurrentSettings();
 
@@ -134,17 +156,47 @@ public final class ClientConfigManager {
         root.addProperty("allowFindKeybind", FindSettings.allowFindKeybind());
         root.addProperty("autoRefreshContents", FindSettings.autoRefreshContents());
         root.addProperty("moveSourceMode", TransferSettings.moveSourceMode().toConfigValue());
+        root.addProperty("detectedCategoryThresholdPercent", ContainerDetectionSettings.detectedCategoryThresholdPercent());
         root.addProperty("dumpQueueMode", DumpSettings.queueMode());
         root.addProperty("dumpRange", DumpSettings.dumpRange());
         root.addProperty("openPickerKeyCode", KeybindSettings.openPickerKeyCode());
         root.addProperty("findShortcutKeyCode", KeybindSettings.findShortcutKeyCode());
         root.addProperty("moveToStorageKeyCode", KeybindSettings.moveToStorageKeyCode());
+        JsonObject multiplayerWorldProfiles = new JsonObject();
+        for (Map.Entry<String, String> entry : MultiplayerWorldProfileSettings.snapshotProfilesByServerScope().entrySet()) {
+            multiplayerWorldProfiles.addProperty(entry.getKey(), entry.getValue());
+        }
+        root.add("multiplayerWorldProfiles", multiplayerWorldProfiles);
 
-        try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
+        Path tmp = configPath.resolveSibling(configPath.getFileName() + ".tmp");
+        try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed writing client config: " + configPath, e);
+            throw new IllegalStateException("Failed writing client config to temp file: " + tmp, e);
         }
+        try {
+            Files.move(tmp, configPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+            try {
+                Files.move(tmp, configPath, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed renaming temp config file to: " + configPath, e);
+            }
+        }
+    }
+
+    private static Path backupCorruptFile(Path path) {
+        if (!Files.exists(path)) {
+            return path;
+        }
+        Path backup = path.resolveSibling(path.getFileName() + ".corrupt-" + System.currentTimeMillis() + ".bak");
+        try {
+            Files.copy(path, backup, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            LatchLabel.LOGGER.warn("Could not back up corrupt config {}: {}", path, ex.getMessage());
+            return path;
+        }
+        return backup;
     }
 
     private static int asInt(JsonElement element, int fallback) {
@@ -166,5 +218,21 @@ public final class ClientConfigManager {
             return fallback;
         }
         return element.getAsString();
+    }
+
+    private static Map<String, String> parseProfiles(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            return Map.of();
+        }
+
+        Map<String, String> parsed = new HashMap<>();
+        for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+            String profileName = asString(entry.getValue(), null);
+            if (profileName == null || profileName.isBlank()) {
+                continue;
+            }
+            parsed.put(entry.getKey(), profileName);
+        }
+        return parsed;
     }
 }

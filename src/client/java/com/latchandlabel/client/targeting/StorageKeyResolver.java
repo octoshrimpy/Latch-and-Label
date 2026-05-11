@@ -1,14 +1,14 @@
 package com.latchandlabel.client.targeting;
 
 import com.latchandlabel.client.model.ChestKey;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ChestBlock;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.enums.ChestType;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
 
 import java.util.LinkedHashSet;
 import java.util.Optional;
@@ -22,7 +22,7 @@ public final class StorageKeyResolver {
     private StorageKeyResolver() {
     }
 
-    public static Optional<ChestKey> resolveForWorld(World world, BlockPos pos) {
+    public static Optional<ChestKey> resolveForWorld(Level world, BlockPos pos) {
         if (world == null || pos == null) {
             return Optional.empty();
         }
@@ -33,26 +33,26 @@ public final class StorageKeyResolver {
         }
 
         BlockPos resolvedPos = resolveCanonicalPos(world, pos).orElse(pos).toImmutable();
-        return Optional.of(new ChestKey(world.getRegistryKey().getValue(), resolvedPos));
+        return Optional.of(new ChestKey(world.dimension().location(), resolvedPos));
     }
 
-    public static ChestKey normalizeForWorld(World world, ChestKey key) {
+    public static ChestKey normalizeForWorld(Level world, ChestKey key) {
         if (world == null || key == null) {
             return key;
         }
-        if (!key.dimensionId().equals(world.getRegistryKey().getValue())) {
+        if (!key.dimensionId().equals(world.dimension().location())) {
             return key;
         }
 
         return resolveForWorld(world, key.pos()).orElse(key);
     }
 
-    public static Set<ChestKey> equivalentKeys(World world, ChestKey key) {
+    public static Set<ChestKey> equivalentKeys(Level world, ChestKey key) {
         if (world == null || key == null) {
             return Set.of();
         }
 
-        Identifier dimensionId = world.getRegistryKey().getValue();
+        ResourceLocation dimensionId = world.dimension().location();
         if (!dimensionId.equals(key.dimensionId())) {
             return Set.of(key);
         }
@@ -83,21 +83,21 @@ public final class StorageKeyResolver {
         return Set.copyOf(keys);
     }
 
-    public static boolean isLikelyFormerChestCounterpart(World world, ChestKey singleChestKey, ChestKey candidateAlias) {
+    public static boolean isLikelyFormerChestCounterpart(Level world, ChestKey singleChestKey, ChestKey candidateAlias) {
         if (world == null || singleChestKey == null || candidateAlias == null) {
             return false;
         }
         return equivalentKeys(world, singleChestKey).contains(candidateAlias);
     }
 
-    private static void addPotentialStaleCounterpart(World world, Identifier dimensionId, Set<ChestKey> keys, BlockPos neighborPos) {
+    private static void addPotentialStaleCounterpart(Level world, ResourceLocation dimensionId, Set<ChestKey> keys, BlockPos neighborPos) {
         if (TrackableStorage.isTrackableStorage(world.getBlockEntity(neighborPos))) {
             return;
         }
         keys.add(new ChestKey(dimensionId, neighborPos.toImmutable()));
     }
 
-    private static Optional<BlockPos> resolveCanonicalPos(World world, BlockPos pos) {
+    private static Optional<BlockPos> resolveCanonicalPos(Level world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
         if (!(state.getBlock() instanceof ChestBlock)) {
             return Optional.empty();
@@ -111,7 +111,7 @@ public final class StorageKeyResolver {
         return resolveDoublePartnerPos(world, pos, state).map(partnerPos -> lowerPos(pos, partnerPos));
     }
 
-    private static Optional<BlockPos> resolveDoublePartnerPos(World world, BlockPos pos, BlockState state) {
+    private static Optional<BlockPos> resolveDoublePartnerPos(Level world, BlockPos pos, BlockState state) {
         if (!(state.getBlock() instanceof ChestBlock)) {
             return Optional.empty();
         }

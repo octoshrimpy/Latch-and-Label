@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.13.3'
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
 
@@ -19,22 +19,21 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
     // Optional integration: only used when ModMenu is present.
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    // modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    // localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 loom {
     splitEnvironmentSourceSets()
-    mixin {
-        useLegacyMixinAp = true
-        add sourceSets.client, "latchlabel.refmap.json"
-    }
 
     mods {
         latchlabel {
@@ -51,16 +50,24 @@ sourceSets {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
     }
+    test {
+        compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
+        runtimeClasspath += sourceSets.client.output + sourceSets.client.runtimeClasspath
+    }
+}
+
+tasks.named("test", Test) {
+    useJUnitPlatform()
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 java {
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 processResources {
@@ -85,49 +92,5 @@ publishing {
 
     repositories {
         // Add your publish target here.
-    }
-}
-
-def gradlewCommand = System.getProperty("os.name").toLowerCase().contains("win") ? "gradlew.bat" : "./gradlew"
-
-tasks.register("buildMc12110", Exec) {
-    group = "build"
-    description = "Builds a jar for Minecraft 1.21.10 with a mc-version suffix"
-    workingDir = rootDir
-    commandLine gradlewCommand,
-            "build",
-            "--console=plain",
-            "-Pbuild_matrix_child=true",
-            "-Pmc_version_suffix=mc1.21.10",
-            "-Pminecraft_version=1.21.10",
-            "-Pyarn_mappings=1.21.10+build.1",
-            "-Ploader_version=0.17.2",
-            "-Pfabric_version=0.138.4+1.21.10"
-}
-
-tasks.register("buildMc12111", Exec) {
-    group = "build"
-    description = "Builds a jar for Minecraft 1.21.11 with a mc-version suffix"
-    workingDir = rootDir
-    commandLine gradlewCommand,
-            "build",
-            "--console=plain",
-            "-Pbuild_matrix_child=true",
-            "-Pmc_version_suffix=mc1.21.11",
-            "-Pminecraft_version=1.21.11",
-            "-Pyarn_mappings=1.21.11+build.4",
-            "-Ploader_version=0.18.1",
-            "-Pfabric_version=0.141.3+1.21.11"
-}
-
-tasks.register("buildAllMc") {
-    group = "build"
-    description = "Builds jars for Minecraft 1.21.10 and 1.21.11"
-    dependsOn("buildMc12110", "buildMc12111")
-}
-
-if (project.hasProperty("build_matrix") && !project.hasProperty("build_matrix_child")) {
-    tasks.named("build").configure {
-        finalizedBy("buildAllMc")
     }
 }

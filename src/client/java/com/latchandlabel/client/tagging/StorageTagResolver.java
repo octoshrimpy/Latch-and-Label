@@ -1,10 +1,10 @@
 package com.latchandlabel.client.tagging;
 
-import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
+import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,36 +19,37 @@ public final class StorageTagResolver {
     private StorageTagResolver() {
     }
 
-    public static Optional<String> resolveCategoryId(MinecraftClient client, ChestKey key) {
+    public static Optional<String> resolveCategoryId(TagStore tagStore, Minecraft client, ChestKey key) {
+        Objects.requireNonNull(tagStore, "tagStore");
         if (key == null) {
             return Optional.empty();
         }
-        if (client == null || client.world == null) {
-            return LatchLabelClientState.tagStore().getTag(key);
+        if (client == null || client.level == null) {
+            return tagStore.getTag(key);
         }
 
-        World world = client.world;
-        if (!key.dimensionId().equals(world.getRegistryKey().getValue())) {
-            return LatchLabelClientState.tagStore().getTag(key);
+        Level world = client.level;
+        if (!key.dimensionId().equals(world.dimension().location())) {
+            return tagStore.getTag(key);
         }
 
         ChestKey preferredKey = StorageKeyResolver.normalizeForWorld(world, key);
         List<ChestKey> lookupOrder = buildLookupOrder(world, preferredKey);
 
         for (ChestKey candidate : lookupOrder) {
-            Optional<String> categoryId = LatchLabelClientState.tagStore().getTag(candidate);
+            Optional<String> categoryId = tagStore.getTag(candidate);
             if (categoryId.isEmpty()) {
                 continue;
             }
 
-            migrateAliasIfNeeded(candidate, preferredKey, categoryId.get());
+            migrateAliasIfNeeded(tagStore, candidate, preferredKey, categoryId.get());
             return Optional.of(categoryId.get());
         }
 
         return Optional.empty();
     }
 
-    private static List<ChestKey> buildLookupOrder(World world, ChestKey preferredKey) {
+    private static List<ChestKey> buildLookupOrder(Level world, ChestKey preferredKey) {
         List<ChestKey> ordered = new ArrayList<>();
         ordered.add(preferredKey);
         for (ChestKey key : StorageKeyResolver.equivalentKeys(world, preferredKey)) {
@@ -59,17 +60,17 @@ public final class StorageTagResolver {
         return List.copyOf(ordered);
     }
 
-    private static void migrateAliasIfNeeded(ChestKey sourceKey, ChestKey preferredKey, String categoryId) {
+    private static void migrateAliasIfNeeded(TagStore tagStore, ChestKey sourceKey, ChestKey preferredKey, String categoryId) {
         if (sourceKey.equals(preferredKey)) {
             return;
         }
 
-        Optional<String> existingPreferred = LatchLabelClientState.tagStore().getTag(preferredKey);
+        Optional<String> existingPreferred = tagStore.getTag(preferredKey);
         if (existingPreferred.isEmpty()) {
-            LatchLabelClientState.tagStore().setTag(preferredKey, categoryId);
+            tagStore.setTag(preferredKey, categoryId);
         }
         if (existingPreferred.isEmpty() || Objects.equals(existingPreferred.get(), categoryId)) {
-            LatchLabelClientState.tagStore().clearTag(sourceKey);
+            tagStore.clearTag(sourceKey);
         }
     }
 }

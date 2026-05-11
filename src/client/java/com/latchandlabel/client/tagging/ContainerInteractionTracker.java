@@ -4,11 +4,12 @@ import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.TrackableStorage;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.core.BlockPos;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Tracks the most recently right-clicked container block as a fallback for
@@ -17,42 +18,42 @@ import java.util.Optional;
 public final class ContainerInteractionTracker {
     private static final long INTERACTION_TTL_MS = 60_000L;
 
-    private static ChestKey lastInteractedContainer;
-    private static long lastInteractionEpochMs;
+    private record Interaction(ChestKey container, long epochMs) {}
+    private static final AtomicReference<Interaction> LAST_INTERACTION = new AtomicReference<>();
 
     private ContainerInteractionTracker() {
     }
 
     public static void register() {
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            if (!world.isClient()) {
-                return ActionResult.PASS;
+            if (!world.isClientSide()) {
+                return InteractionResult.PASS;
             }
 
             BlockPos pos = hitResult.getBlockPos();
             BlockEntity blockEntity = world.getBlockEntity(pos);
             if (!TrackableStorage.isTrackableStorage(blockEntity)) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
 
-            StorageKeyResolver.resolveForWorld(world, pos).ifPresent(resolved -> {
-                lastInteractedContainer = resolved;
-                lastInteractionEpochMs = System.currentTimeMillis();
-            });
-            return ActionResult.PASS;
+            StorageKeyResolver.resolveForWorld(world, pos).ifPresent(resolved ->
+                    LAST_INTERACTION.set(new Interaction(resolved, System.currentTimeMillis()))
+            );
+            return InteractionResult.PASS;
         });
     }
 
     public static Optional<ChestKey> getRecent() {
-        if (lastInteractedContainer == null) {
+        Interaction interaction = LAST_INTERACTION.get();
+        if (interaction == null) {
             return Optional.empty();
         }
 
-        long ageMs = System.currentTimeMillis() - lastInteractionEpochMs;
+        long ageMs = System.currentTimeMillis() - interaction.epochMs();
         if (ageMs > INTERACTION_TTL_MS) {
             return Optional.empty();
         }
 
-        return Optional.of(lastInteractedContainer);
+        return Optional.of(interaction.container());
     }
 }

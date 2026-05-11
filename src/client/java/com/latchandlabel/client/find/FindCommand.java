@@ -11,12 +11,12 @@ import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.Category;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 import java.util.Locale;
@@ -50,16 +50,14 @@ public final class FindCommand {
         );
     }
 
-    public static int runFromShortcut(MinecraftClient client) {
-        if (client == null || client.player == null || client.world == null) {
+    public static int runFromShortcut(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
             return 0;
         }
 
-        Item mainhandItem = client.player.getMainHandStack().getItem();
+        Item mainhandItem = client.player.getMainHandItem().getItem();
         if (mainhandItem == Items.AIR) {
-            if (client.player != null) {
-                client.player.sendMessage(Text.translatable("latchlabel.find.error_mainhand_empty"), true);
-            }
+            client.player.sendMessage(Component.translatable("latchlabel.find.error_mainhand_empty"), true);
             return 0;
         }
 
@@ -67,14 +65,14 @@ public final class FindCommand {
     }
 
     private static int executeNoArgs(CommandContext<FabricClientCommandSource> context) {
-        MinecraftClient client = context.getSource().getClient();
+        Minecraft client = context.getSource().getClient();
         if (client.player == null) {
             return 0;
         }
 
-        Item mainhandItem = client.player.getMainHandStack().getItem();
+        Item mainhandItem = client.player.getMainHandItem().getItem();
         if (mainhandItem == Items.AIR) {
-            context.getSource().sendError(Text.translatable("latchlabel.find.error_mainhand_empty"));
+            context.getSource().sendError(Component.translatable("latchlabel.find.error_mainhand_empty"));
             return 0;
         }
 
@@ -86,7 +84,7 @@ public final class FindCommand {
         if (rawQuery.startsWith("#")) {
             Optional<String> categoryId = parseCategoryId(rawQuery.substring(1));
             if (categoryId.isEmpty()) {
-                context.getSource().sendError(Text.translatable("latchlabel.find.error_invalid_tag"));
+                context.getSource().sendError(Component.translatable("latchlabel.find.error_invalid_tag"));
                 return 0;
             }
             return runFindByTag(context.getSource().getClient(), categoryId.get(), FindSettings.defaultFindRadius());
@@ -94,7 +92,7 @@ public final class FindCommand {
 
         Optional<Item> item = parseItemId(rawQuery);
         if (item.isEmpty()) {
-            context.getSource().sendError(Text.translatable("latchlabel.find.error_invalid_item"));
+            context.getSource().sendError(Component.translatable("latchlabel.find.error_invalid_item"));
             return 0;
         }
         return runFind(context.getSource().getClient(), item.get(), FindSettings.defaultFindRadius());
@@ -107,7 +105,7 @@ public final class FindCommand {
         if (rawQuery.startsWith("#")) {
             Optional<String> categoryId = parseCategoryId(rawQuery.substring(1));
             if (categoryId.isEmpty()) {
-                context.getSource().sendError(Text.translatable("latchlabel.find.error_invalid_tag"));
+                context.getSource().sendError(Component.translatable("latchlabel.find.error_invalid_tag"));
                 return 0;
             }
             return runFindByTag(context.getSource().getClient(), categoryId.get(), radius);
@@ -115,25 +113,26 @@ public final class FindCommand {
 
         Optional<Item> item = parseItemId(rawQuery);
         if (item.isEmpty()) {
-            context.getSource().sendError(Text.translatable("latchlabel.find.error_invalid_item"));
+            context.getSource().sendError(Component.translatable("latchlabel.find.error_invalid_item"));
             return 0;
         }
         return runFind(context.getSource().getClient(), item.get(), radius);
     }
 
-    private static int runFind(MinecraftClient client, Item targetItem, int radius) {
+    private static int runFind(Minecraft client, Item targetItem, int radius) {
         long startedAtNs = System.nanoTime();
-        if (client.world == null || client.player == null) {
+        if (client.level == null || client.player == null) {
             if (client.player != null) {
-                client.player.sendMessage(Text.translatable("latchlabel.find.error_world_unavailable"), true);
+                client.player.sendMessage(Component.translatable("latchlabel.find.error_world_unavailable"), true);
             }
             return 0;
         }
 
         VariantMatcher.VariantMatchResult matchResult = VARIANT_MATCHER.resolve(targetItem);
-        Identifier targetId = Registries.ITEM.getId(targetItem);
+        ResourceLocation targetId = BuiltInRegistries.ITEM.getKey(targetItem).location();
         List<FindScanService.FindMatch> results = FIND_SCAN_SERVICE.scan(client, targetItem, matchResult.matchSet(), radius);
         FindResultState.publish(results);
+        FindResultState.highlightItems(targetItem, matchResult.matchSet(), FindResultState.getHighlightDurationMs());
         if (!results.isEmpty()) {
             java.util.LinkedHashSet<com.latchandlabel.client.model.ChestKey> allMatchKeys = new java.util.LinkedHashSet<>();
             for (FindScanService.FindMatch result : results) {
@@ -146,10 +145,10 @@ public final class FindCommand {
                 FindResultState.focusAll(allMatchKeys, FindResultState.getHighlightDurationMs());
             }
         }
-        NearbyChestScanner.scheduleNearby(client, radius);
+        NearbyChestScanner.scheduleNearby(client, radius, targetItem, matchResult.matchSet());
         if (client.inGameHud != null) {
             client.inGameHud.setOverlayMessage(
-                    Text.translatable("latchlabel.find.feedback_results_count", results.size()),
+                    Component.translatable("latchlabel.find.feedback_results_count", results.size()),
                     false
             );
         }
@@ -170,16 +169,17 @@ public final class FindCommand {
         return results.size();
     }
 
-    private static int runFindByTag(MinecraftClient client, String categoryId, int radius) {
-        if (client.world == null || client.player == null) {
+    private static int runFindByTag(Minecraft client, String categoryId, int radius) {
+        if (client.level == null || client.player == null) {
             if (client.player != null) {
-                client.player.sendMessage(Text.translatable("latchlabel.find.error_world_unavailable"), true);
+                client.player.sendMessage(Component.translatable("latchlabel.find.error_world_unavailable"), true);
             }
             return 0;
         }
 
         List<FindScanService.FindMatch> results = FIND_SCAN_SERVICE.scanByTag(client, categoryId, radius);
         FindResultState.publish(results);
+        FindResultState.highlightCategory(categoryId, FindResultState.getHighlightDurationMs());
         if (!results.isEmpty()) {
             java.util.LinkedHashSet<com.latchandlabel.client.model.ChestKey> allMatchKeys = new java.util.LinkedHashSet<>();
             for (FindScanService.FindMatch result : results) {
@@ -189,11 +189,11 @@ public final class FindCommand {
         }
         if (client.inGameHud != null) {
             client.inGameHud.setOverlayMessage(
-                    Text.translatable("latchlabel.find.feedback_results_count", results.size()),
+                    Component.translatable("latchlabel.find.feedback_results_count", results.size()),
                     false
             );
         }
-        NearbyChestScanner.scheduleNearby(client, radius);
+        NearbyChestScanner.scheduleNearbyByCategory(client, radius, categoryId);
         return results.size();
     }
 
@@ -229,15 +229,15 @@ public final class FindCommand {
 
     private static Optional<Item> parseItemId(String rawItemId) {
         String normalized = rawItemId == null ? "" : rawItemId.trim().toLowerCase();
-        Identifier itemId = Identifier.tryParse(normalized);
+        ResourceLocation itemId = ResourceLocation.tryParse(normalized);
         if (itemId == null && !normalized.isEmpty() && normalized.indexOf(':') < 0) {
-            itemId = Identifier.tryParse("minecraft:" + normalized);
+            itemId = ResourceLocation.tryParse("minecraft:" + normalized);
         }
-        if (itemId == null || !Registries.ITEM.containsId(itemId)) {
+        if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) {
             return Optional.empty();
         }
 
-        Item item = Registries.ITEM.get(itemId);
+        Item item = BuiltInRegistries.ITEM.get(itemId);
         if (item == Items.AIR) {
             return Optional.empty();
         }
@@ -257,14 +257,14 @@ public final class FindCommand {
             for (Category category : LatchLabelClientState.categoryStore().listAll()) {
                 String suggestion = "#" + category.id();
                 if (suggestion.toLowerCase(Locale.ROOT).startsWith(remaining)) {
-                    builder.suggest(suggestion, net.minecraft.text.Text.literal(category.name()));
+                    builder.suggest(suggestion, net.minecraft.text.Component.literal(category.name()));
                 }
             }
             return builder.buildFuture();
         }
 
         boolean usingNamespace = remaining.indexOf(':') >= 0;
-        for (Identifier itemId : Registries.ITEM.getIds()) {
+        for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
             if (itemId == null) {
                 continue;
             }
@@ -284,7 +284,7 @@ public final class FindCommand {
 
         if (remaining.isEmpty() || "#".startsWith(remaining)) {
             for (Category category : LatchLabelClientState.categoryStore().listAll()) {
-                builder.suggest("#" + category.id(), net.minecraft.text.Text.literal(category.name()));
+                builder.suggest("#" + category.id(), net.minecraft.text.Component.literal(category.name()));
             }
         }
 

@@ -14,8 +14,8 @@ import com.latchandlabel.client.store.CategoryStore;
 import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -23,6 +23,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -45,8 +46,8 @@ import java.util.concurrent.TimeUnit;
 public final class ClientDataManager implements AutoCloseable {
     private static final int CURRENT_VERSION = 1;
     private static final long SAVE_DEBOUNCE_MS = 1_000L;
-    private static final Identifier FALLBACK_ICON_ITEM_ID = Objects.requireNonNull(
-            Identifier.tryParse("minecraft:stone"),
+    private static final ResourceLocation FALLBACK_ICON_ITEM_ID = Objects.requireNonNull(
+            ResourceLocation.tryParse("minecraft:stone"),
             "Invalid fallback identifier"
     );
     private static final String SCOPES_DIR_NAME = "scopes";
@@ -83,6 +84,7 @@ public final class ClientDataManager implements AutoCloseable {
     private final Path legacyOverridesFilePath;
     private final ScheduledExecutorService saveExecutor;
     private final Object saveLock = new Object();
+    private final Object flushLock = new Object();
 
     private String activeScopeId = TagStore.DEFAULT_SCOPE_ID;
     private List<String> activeFallbackReadScopeIds = List.of();
@@ -96,11 +98,25 @@ public final class ClientDataManager implements AutoCloseable {
             TagStore tagStore,
             ItemCategoryMappingService itemCategoryMappingService
     ) {
+        this(
+                categoryStore,
+                tagStore,
+                itemCategoryMappingService,
+                FabricLoader.getInstance().getConfigDir().resolve(LatchLabel.MOD_ID)
+        );
+    }
+
+    ClientDataManager(
+            CategoryStore categoryStore,
+            TagStore tagStore,
+            ItemCategoryMappingService itemCategoryMappingService,
+            Path configDir
+    ) {
         this.categoryStore = Objects.requireNonNull(categoryStore, "categoryStore");
         this.tagStore = Objects.requireNonNull(tagStore, "tagStore");
         this.itemCategoryMappingService = Objects.requireNonNull(itemCategoryMappingService, "itemCategoryMappingService");
 
-        this.configDir = FabricLoader.getInstance().getConfigDir().resolve(LatchLabel.MOD_ID);
+        this.configDir = Objects.requireNonNull(configDir, "configDir");
         this.scopesDir = configDir.resolve(SCOPES_DIR_NAME);
         this.legacyCategoriesFilePath = configDir.resolve("categories.json");
         this.legacyTagsFilePath = configDir.resolve("tags.json");
@@ -151,13 +167,17 @@ public final class ClientDataManager implements AutoCloseable {
             }
             if (Objects.equals(activeScopeId, normalizedScopeId)
                     && Objects.equals(activeFallbackReadScopeIds, normalizedFallbackScopeIds)) {
+                LatchLabel.LOGGER.debug("[DataManager] setActiveScopeId: no change (scope={})", normalizedScopeId);
                 return;
             }
             if (Objects.equals(activeScopeId, normalizedScopeId)) {
+                LatchLabel.LOGGER.debug("[DataManager] setActiveScopeId: fallbacks updated for scope={}", normalizedScopeId);
                 activeFallbackReadScopeIds = normalizedFallbackScopeIds;
                 tagStore.setActiveScopeId(activeScopeId, activeFallbackReadScopeIds);
                 return;
             }
+            LatchLabel.LOGGER.info("[DataManager] scope changing: {} -> {} (fallbacks={})",
+                    activeScopeId, normalizedScopeId, normalizedFallbackScopeIds.size());
             if (pendingSave != null) {
                 pendingSave.cancel(false);
                 pendingSave = null;
@@ -165,8 +185,10 @@ public final class ClientDataManager implements AutoCloseable {
         }
 
         flushNow();
-        activeScopeId = normalizedScopeId;
-        activeFallbackReadScopeIds = normalizedFallbackScopeIds;
+        synchronized (saveLock) {
+            activeScopeId = normalizedScopeId;
+            activeFallbackReadScopeIds = normalizedFallbackScopeIds;
+        }
         runWithSaveSchedulingSuppressed(this::loadActiveScopeData);
     }
 
@@ -184,18 +206,26 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     public void flushNow() {
-        synchronized (saveLock) {
-            if (closed) {
-                return;
+        synchronized (flushLock) {
+            String scopeId;
+            boolean hadPending;
+            synchronized (saveLock) {
+                if (closed) {
+                    return;
+                }
+                hadPending = pendingSave != null;
+                if (pendingSave != null) {
+                    pendingSave.cancel(false);
+                    pendingSave = null;
+                }
+                scopeId = activeScopeId;
             }
-            if (pendingSave != null) {
-                pendingSave.cancel(false);
-                pendingSave = null;
-            }
-        }
 
-        writeCategoriesAndOverrides();
-        writeTags();
+            PersistenceSnapshot snapshot = snapshotForScope(scopeId);
+            LatchLabel.LOGGER.debug("[DataManager] flushNow scope={} cancelledPending={}", scopeId, hadPending);
+            writeCategoriesAndOverrides(snapshot);
+            writeTags(snapshot);
+        }
     }
 
     public void reloadFromDisk() {
@@ -239,19 +269,24 @@ public final class ClientDataManager implements AutoCloseable {
 
     @Override
     public void close() {
-        synchronized (saveLock) {
-            if (closed) {
-                return;
+        synchronized (flushLock) {
+            String scopeId;
+            synchronized (saveLock) {
+                if (closed) {
+                    return;
+                }
+                if (pendingSave != null) {
+                    pendingSave.cancel(false);
+                    pendingSave = null;
+                }
+                scopeId = activeScopeId;
+                closed = true;
             }
-            closed = true;
-            if (pendingSave != null) {
-                pendingSave.cancel(false);
-                pendingSave = null;
-            }
-        }
 
-        writeCategoriesAndOverrides();
-        writeTags();
+            PersistenceSnapshot snapshot = snapshotForScope(scopeId);
+            writeCategoriesAndOverrides(snapshot);
+            writeTags(snapshot);
+        }
         saveExecutor.shutdown();
     }
 
@@ -285,7 +320,13 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     private void loadActiveScopeData() {
-        tagStore.setActiveScopeId(activeScopeId, activeFallbackReadScopeIds);
+        String scopeId;
+        List<String> fallbackIds;
+        synchronized (saveLock) {
+            scopeId = activeScopeId;
+            fallbackIds = activeFallbackReadScopeIds;
+        }
+        tagStore.setActiveScopeId(scopeId, fallbackIds);
         loadCategoriesAndOverrides();
         loadTags();
     }
@@ -296,25 +337,44 @@ public final class ClientDataManager implements AutoCloseable {
         if (!Files.exists(filePath)) {
             if (TagStore.DEFAULT_SCOPE_ID.equals(activeScopeId)
                     && (Files.exists(legacyCategoriesFilePath) || Files.exists(legacyOverridesFilePath))) {
+                LatchLabel.LOGGER.info("[DataManager] Migrating legacy categories for scope {}", activeScopeId);
                 loadLegacyCategoriesAndOverrides();
-                writeCategoriesAndOverrides();
+                writeCategoriesAndOverrides(snapshotForScope(activeScopeId));
                 return;
             }
 
+            for (String fallbackScopeId : activeFallbackReadScopeIds) {
+                Path fallbackFilePath = categoriesAndOverridesFilePathForScope(fallbackScopeId);
+                if (!Files.exists(fallbackFilePath)) {
+                    continue;
+                }
+                LatchLabel.LOGGER.info("[DataManager] Migrating categories from fallback scope {} to primary scope {}",
+                        fallbackScopeId, activeScopeId);
+                loadCategoriesAndOverridesFromFile(fallbackFilePath);
+                writeCategoriesAndOverrides(snapshotForScope(activeScopeId));
+                return;
+            }
+
+            LatchLabel.LOGGER.info("[DataManager] No categories file for scope {}, creating defaults", activeScopeId);
             categoryStore.replaceAll(DefaultCategories.create());
             itemCategoryMappingService.applyScopedOverrides(Map.of(), Set.of());
-            writeCategoriesAndOverrides();
+            writeCategoriesAndOverrides(snapshotForScope(activeScopeId));
             return;
         }
 
+        loadCategoriesAndOverridesFromFile(filePath);
+    }
+
+    private void loadCategoriesAndOverridesFromFile(Path filePath) {
         JsonObject root;
         try {
             root = readJsonObject(filePath);
         } catch (IllegalStateException e) {
-            LatchLabel.LOGGER.warn("Invalid scoped categories file {}, using defaults", filePath, e);
+            Path backup = backupCorruptFile(filePath);
+            LatchLabel.LOGGER.warn("Invalid scoped categories file {}, backed up to {}, using defaults", filePath, backup, e);
             categoryStore.replaceAll(DefaultCategories.create());
             itemCategoryMappingService.applyScopedOverrides(Map.of(), Set.of());
-            writeCategoriesAndOverrides();
+            writeCategoriesAndOverrides(snapshotForScope(activeScopeId));
             return;
         }
         int version = parseVersion(root, filePath);
@@ -363,6 +423,7 @@ public final class ClientDataManager implements AutoCloseable {
         Map<String, Map<ChestKey, String>> tagsByScope = new LinkedHashMap<>();
         Map<String, String> lastUsedByScope = new HashMap<>();
         boolean loadedAnyScope = false;
+        boolean loadedActiveScope = false;
 
         for (String scopeId : readScopes) {
             ScopedTags scopedTags = loadScopedTags(scopeId);
@@ -370,6 +431,9 @@ public final class ClientDataManager implements AutoCloseable {
                 continue;
             }
             loadedAnyScope = true;
+            if (Objects.equals(scopeId, activeScopeId)) {
+                loadedActiveScope = true;
+            }
             tagsByScope.put(scopeId, new HashMap<>(scopedTags.tags()));
             if (scopedTags.lastUsedCategoryId() != null && !scopedTags.lastUsedCategoryId().isBlank()) {
                 lastUsedByScope.put(scopeId, scopedTags.lastUsedCategoryId());
@@ -382,14 +446,14 @@ public final class ClientDataManager implements AutoCloseable {
             if (legacyTags.lastUsedCategoryId() != null && !legacyTags.lastUsedCategoryId().isBlank()) {
                 lastUsedByScope.put(activeScopeId, legacyTags.lastUsedCategoryId());
             }
-            tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId);
-            writeTags();
+            tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId, activeFallbackReadScopeIds);
+            writeTags(snapshotForScope(activeScopeId));
             return;
         }
 
         boolean activeHasData = hasScopeData(tagsByScope.get(activeScopeId), lastUsedByScope.get(activeScopeId));
         boolean migratedFromFallback = false;
-        if (!activeHasData) {
+        if (!activeHasData && !loadedActiveScope) {
             for (String fallbackScopeId : activeFallbackReadScopeIds) {
                 Map<ChestKey, String> fallbackTags = tagsByScope.get(fallbackScopeId);
                 String fallbackLastUsed = lastUsedByScope.get(fallbackScopeId);
@@ -401,15 +465,16 @@ public final class ClientDataManager implements AutoCloseable {
                     lastUsedByScope.put(activeScopeId, fallbackLastUsed);
                 }
                 migratedFromFallback = true;
-                LatchLabel.LOGGER.info("Migrating tags from fallback scope {} to primary scope {}", fallbackScopeId, activeScopeId);
+                LatchLabel.LOGGER.info("[DataManager] Migrating {} tags from fallback scope {} to primary scope {}",
+                        fallbackTags == null ? 0 : fallbackTags.size(), fallbackScopeId, activeScopeId);
                 break;
             }
         }
 
         tagsByScope.computeIfAbsent(activeScopeId, unused -> new HashMap<>());
-        tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId);
+        tagStore.replaceAllScopes(tagsByScope, lastUsedByScope, activeScopeId, activeFallbackReadScopeIds);
         if (migratedFromFallback || !loadedAnyScope) {
-            writeTags();
+            writeTags(snapshotForScope(activeScopeId));
         }
     }
 
@@ -477,15 +542,29 @@ public final class ClientDataManager implements AutoCloseable {
         return new ScopedTags(parsedTags, lastUsedCategoryId);
     }
 
-    private void writeCategoriesAndOverrides() {
-        Path filePath = categoriesAndOverridesFilePathForScope(activeScopeId);
+    private PersistenceSnapshot snapshotForScope(String scopeId) {
+        String normalizedScopeId = normalizeScopeId(scopeId);
+        return new PersistenceSnapshot(
+                normalizedScopeId,
+                categoryStore.listAll(),
+                itemCategoryMappingService.snapshotOverrides(),
+                itemCategoryMappingService.snapshotBlockedMappings(),
+                tagStore.snapshotTagsForScope(normalizedScopeId),
+                tagStore.snapshotLastUsedCategoryIdForScope(normalizedScopeId).orElse(null)
+        );
+    }
+
+    private void writeCategoriesAndOverrides(PersistenceSnapshot snapshot) {
+        Path filePath = categoriesAndOverridesFilePathForScope(snapshot.scopeId());
         ensureScopeDirectory(filePath.getParent());
+        LatchLabel.LOGGER.debug("[DataManager] writeCategoriesAndOverrides: {} categories -> {}",
+                snapshot.categories().size(), filePath);
 
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
         var serializedCategories = new com.google.gson.JsonArray();
-        for (Category category : categoryStore.listAll()) {
+        for (Category category : snapshot.categories()) {
             JsonObject categoryObject = new JsonObject();
             categoryObject.addProperty("id", category.id());
             categoryObject.addProperty("name", category.name());
@@ -498,10 +577,10 @@ public final class ClientDataManager implements AutoCloseable {
         root.add("categories", serializedCategories);
 
         JsonObject itemOverrides = new JsonObject();
-        for (Identifier blockedItemId : itemCategoryMappingService.snapshotBlockedMappings()) {
+        for (ResourceLocation blockedItemId : snapshot.blockedItemMappings()) {
             itemOverrides.add(blockedItemId.toString(), JsonNull.INSTANCE);
         }
-        for (Map.Entry<Identifier, String> entry : itemCategoryMappingService.snapshotOverrides().entrySet()) {
+        for (Map.Entry<ResourceLocation, String> entry : snapshot.itemOverrides().entrySet()) {
             itemOverrides.addProperty(entry.getKey().toString(), entry.getValue());
         }
         root.add("itemOverrides", itemOverrides);
@@ -509,19 +588,24 @@ public final class ClientDataManager implements AutoCloseable {
         writeJsonObject(filePath, root);
     }
 
-    private void writeTags() {
-        Path filePath = tagsFilePathForScope(activeScopeId);
+    private void writeTags(PersistenceSnapshot snapshot) {
+        Path filePath = tagsFilePathForScope(snapshot.scopeId());
         ensureScopeDirectory(filePath.getParent());
 
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
+        LatchLabel.LOGGER.debug("[DataManager] writeTags: {} tags -> {}", snapshot.tags().size(), filePath);
         JsonObject tagsObject = new JsonObject();
-        for (Map.Entry<ChestKey, String> entry : tagStore.snapshotTags().entrySet()) {
+        for (Map.Entry<ChestKey, String> entry : snapshot.tags().entrySet()) {
             tagsObject.addProperty(entry.getKey().toStringKey(), entry.getValue());
         }
         root.add("tags", tagsObject);
-        tagStore.getLastUsedCategoryId().ifPresent(value -> root.addProperty("lastUsedCategoryId", value));
+
+        String lastUsed = snapshot.lastUsedCategoryId();
+        if (lastUsed != null && !lastUsed.isBlank()) {
+            root.addProperty("lastUsedCategoryId", lastUsed);
+        }
 
         writeJsonObject(filePath, root);
     }
@@ -601,11 +685,11 @@ public final class ClientDataManager implements AutoCloseable {
             return ParsedOverrides.empty();
         }
 
-        Map<Identifier, String> parsedOverrides = new LinkedHashMap<>();
-        Set<Identifier> blocked = new LinkedHashSet<>();
+        Map<ResourceLocation, String> parsedOverrides = new LinkedHashMap<>();
+        Set<ResourceLocation> blocked = new LinkedHashSet<>();
         for (Map.Entry<String, JsonElement> entry : overridesElement.getAsJsonObject().entrySet()) {
-            Identifier itemId = Identifier.tryParse(entry.getKey());
-            if (itemId == null || !Registries.ITEM.containsId(itemId)) {
+            ResourceLocation itemId = ResourceLocation.tryParse(entry.getKey());
+            if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) {
                 continue;
             }
             if (entry.getValue().isJsonNull()) {
@@ -626,6 +710,17 @@ public final class ClientDataManager implements AutoCloseable {
         return new ParsedOverrides(Map.copyOf(parsedOverrides), Set.copyOf(blocked));
     }
 
+    private static Path backupCorruptFile(Path path) {
+        Path backup = path.resolveSibling(path.getFileName() + ".corrupt-" + System.currentTimeMillis() + ".bak");
+        try {
+            Files.copy(path, backup);
+        } catch (IOException ex) {
+            LatchLabel.LOGGER.warn("Could not back up corrupt file {}: {}", path, ex.getMessage());
+            return path;
+        }
+        return backup;
+    }
+
     private static JsonObject readJsonObject(Path path) {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             JsonElement element = JsonParser.parseReader(reader);
@@ -639,10 +734,21 @@ public final class ClientDataManager implements AutoCloseable {
     }
 
     private static void writeJsonObject(Path path, JsonObject root) {
-        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+        try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed writing json file: " + path, e);
+            throw new IllegalStateException("Failed writing json file: " + tmp, e);
+        }
+        try {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+            // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic replace
+            try {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed renaming temp file to: " + path, e);
+            }
         }
     }
 
@@ -664,7 +770,7 @@ public final class ClientDataManager implements AutoCloseable {
             return null;
         }
 
-        Identifier iconItemId = Identifier.tryParse(iconItemIdRaw);
+        ResourceLocation iconItemId = ResourceLocation.tryParse(iconItemIdRaw);
         if (iconItemId == null) {
             iconItemId = FALLBACK_ICON_ITEM_ID;
         }
@@ -765,7 +871,7 @@ public final class ClientDataManager implements AutoCloseable {
         return List.copyOf(normalized);
     }
 
-    private record ParsedOverrides(Map<Identifier, String> overrides, Set<Identifier> blocked) {
+    private record ParsedOverrides(Map<ResourceLocation, String> overrides, Set<ResourceLocation> blocked) {
         private static ParsedOverrides empty() {
             return new ParsedOverrides(Map.of(), Set.of());
         }
@@ -775,5 +881,15 @@ public final class ClientDataManager implements AutoCloseable {
         private static ScopedTags empty() {
             return new ScopedTags(Map.of(), null);
         }
+    }
+
+    private record PersistenceSnapshot(
+            String scopeId,
+            List<Category> categories,
+            Map<ResourceLocation, String> itemOverrides,
+            Set<ResourceLocation> blockedItemMappings,
+            Map<ChestKey, String> tags,
+            String lastUsedCategoryId
+    ) {
     }
 }

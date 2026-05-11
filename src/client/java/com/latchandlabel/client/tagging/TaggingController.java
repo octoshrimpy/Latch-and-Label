@@ -4,9 +4,9 @@ import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.ui.CategoryPickerScreen;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 /**
  * Orchestrates tagging operations: opens the category picker, applies/clears tags,
@@ -16,7 +16,7 @@ public final class TaggingController {
     private TaggingController() {
     }
 
-    public static void openPicker(MinecraftClient client, ChestKey chestKey) {
+    public static void openPicker(Minecraft client, ChestKey chestKey) {
         if (client == null) {
             return;
         }
@@ -27,12 +27,11 @@ public final class TaggingController {
                 parentScreen,
                 resolvedKey,
                 categoryId -> {
-                    LatchLabelClientState.tagStore().setTag(resolvedKey, categoryId);
-                    showOverlay(client, Text.translatable("latchlabel.tagged", categoryId));
+                    applyTag(client, resolvedKey, categoryId);
                 },
                 () -> {
                     LatchLabelClientState.tagStore().clearTag(resolvedKey);
-                    showOverlay(client, Text.translatable("latchlabel.tag_cleared"));
+                    showOverlay(client, Component.translatable("latchlabel.tag_cleared"));
                 },
                 () -> {
                     // no-op
@@ -40,20 +39,26 @@ public final class TaggingController {
         ));
     }
 
-    public static void clearTag(MinecraftClient client, ChestKey chestKey) {
+    public static void applyTag(Minecraft client, ChestKey chestKey, String categoryId) {
+        ChestKey resolvedKey = resolveKey(client, chestKey);
+        LatchLabelClientState.tagStore().setTag(resolvedKey, categoryId);
+        showOverlay(client, Component.translatable("latchlabel.tagged", categoryId));
+    }
+
+    public static void clearTag(Minecraft client, ChestKey chestKey) {
         ChestKey resolvedKey = resolveKey(client, chestKey);
         LatchLabelClientState.tagStore().clearTag(resolvedKey);
-        showOverlay(client, Text.translatable("latchlabel.tag_cleared"));
+        showOverlay(client, Component.translatable("latchlabel.tag_cleared"));
     }
 
-    private static ChestKey resolveKey(MinecraftClient client, ChestKey chestKey) {
-        if (client == null || client.world == null || chestKey == null) {
+    private static ChestKey resolveKey(Minecraft client, ChestKey chestKey) {
+        if (client == null || client.level == null || chestKey == null) {
             return chestKey;
         }
-        return StorageKeyResolver.normalizeForWorld(client.world, chestKey);
+        return StorageKeyResolver.normalizeForWorld(client.level, chestKey);
     }
 
-    private static void showOverlay(MinecraftClient client, Text message) {
+    private static void showOverlay(Minecraft client, Component message) {
         if (client.inGameHud != null) {
             client.inGameHud.setOverlayMessage(message, false);
         }

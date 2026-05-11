@@ -3,23 +3,29 @@ package com.latchandlabel.client.input;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.model.ChestKey;
+import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.TrackableStorage;
 import com.latchandlabel.client.ui.ContainerTagButtonManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.Window;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.Vec3d;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.player.LocalPlayer;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.Window;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
@@ -28,54 +34,146 @@ public final class AltClickMoveToStorageHandler {
     private static final int AUTO_MOVE_TIMEOUT_TICKS = 20;
 
     private static PendingAutoMove pendingAutoMove;
+    private static Optional<String> copiedCategoryId = Optional.empty();
 
     private AltClickMoveToStorageHandler() {
     }
 
     public static void register() {
         AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
-            if (!world.isClient() || hand != Hand.MAIN_HAND) {
-                return ActionResult.PASS;
+            if (!world.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
             }
 
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client == null || client.player == null || client.interactionManager == null) {
-                return ActionResult.PASS;
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.player == null || client.gameMode == null) {
+                return InteractionResult.PASS;
             }
             if (!isAltDown(client.getWindow())) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
+            boolean pullNonMatching = isShiftDown(client.getWindow());
             if (pendingAutoMove != null) {
-                return ActionResult.FAIL;
+                return InteractionResult.FAIL;
             }
 
             BlockEntity blockEntity = world.getBlockEntity(pos);
             if (!TrackableStorage.isTrackableStorage(blockEntity)) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
 
             Optional<ChestKey> resolved = StorageKeyResolver.resolveForWorld(world, pos);
             if (resolved.isEmpty()) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
-            Optional<String> categoryId = StorageTagResolver.resolveCategoryId(client, resolved.get());
+            Optional<String> categoryId = StorageTagResolver.resolveCategoryId(LatchLabelClientState.tagStore(), client, resolved.get());
             if (categoryId.isEmpty()) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
-            if (!hasMatchingPlayerInventoryStacks(client.player.getInventory(), categoryId.get())) {
-                return ActionResult.PASS;
+            if (!pullNonMatching && !hasMatchingInventoryStacks(client.player.getInventory(), categoryId.get())) {
+                sendActionBar(client, Component.translatable("latchlabel.drop.no_matching_blocks"));
+                return InteractionResult.FAIL;
             }
 
-            BlockHitResult hitResult = new BlockHitResult(Vec3d.ofCenter(pos), direction, pos, false);
-            client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
-            pendingAutoMove = new PendingAutoMove(resolved.get(), AUTO_MOVE_TIMEOUT_TICKS);
-            return ActionResult.FAIL;
+            AutoMoveOperation operation = pullNonMatching
+                    ? AutoMoveOperation.PULL_NON_MATCHING_FROM_STORAGE
+                    : AutoMoveOperation.PUSH_MATCHING_TO_STORAGE;
+            sendActionBar(client, Component.translatable(operation.startingTranslationKey()));
+            BlockHitResult hitResult = new BlockHitResult(Vec3.ofCenter(pos), direction, pos, false);
+            pendingAutoMove = new PendingAutoMove(resolved.get(), operation, AUTO_MOVE_TIMEOUT_TICKS);
+            try {
+                openStorageForAutoMove(client, hitResult, pullNonMatching);
+            } catch (RuntimeException e) {
+                pendingAutoMove = null;
+                throw e;
+            }
+            return InteractionResult.FAIL;
+        });
+
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (!world.isClientSide() || hand != InteractionHand.MAIN_HAND || player == null || hitResult == null) {
+                return InteractionResult.PASS;
+            }
+
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.player == null || !isAltDown(client.getWindow())) {
+                return InteractionResult.PASS;
+            }
+            if (pendingAutoMove != null) {
+                return InteractionResult.PASS;
+            }
+
+            BlockEntity blockEntity = world.getBlockEntity(hitResult.getBlockPos());
+            if (!TrackableStorage.isTrackableStorage(blockEntity)) {
+                return InteractionResult.PASS;
+            }
+
+            Optional<ChestKey> resolved = StorageKeyResolver.resolveForWorld(world, hitResult.getBlockPos());
+            if (resolved.isEmpty()) {
+                return InteractionResult.PASS;
+            }
+
+            Optional<String> categoryId = StorageTagResolver.resolveCategoryId(LatchLabelClientState.tagStore(), client, resolved.get());
+            if (categoryId.isPresent()) {
+                copiedCategoryId = categoryId;
+                sendActionBar(client, Component.translatable("latchlabel.tag_clipboard.copied", categoryName(categoryId.get())));
+                return InteractionResult.FAIL;
+            }
+
+            if (copiedCategoryId.isEmpty()) {
+                sendActionBar(client, Component.translatable("latchlabel.tag_clipboard.empty"));
+                return InteractionResult.FAIL;
+            }
+
+            LatchLabelClientState.tagStore().setTag(resolved.get(), copiedCategoryId.get());
+            sendActionBar(client, Component.translatable("latchlabel.tag_clipboard.pasted", categoryName(copiedCategoryId.get())));
+            return InteractionResult.FAIL;
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(AltClickMoveToStorageHandler::onEndTick);
     }
 
-    private static void onEndTick(MinecraftClient client) {
+    private static void openStorageForAutoMove(Minecraft client, BlockHitResult hitResult, boolean wasShiftActivated) {
+        if (!wasShiftActivated) {
+            client.gameMode.interactBlock(client.player, InteractionHand.MAIN_HAND, hitResult);
+            return;
+        }
+
+        LocalPlayer player = client.player;
+        // TODO: verify getLastInput() Mojang name (was getLastPlayerInput() in Yarn)
+        Input originalInput = player.getLastInput();
+        Input unsneakingInput = withSneak(originalInput, false);
+        boolean wasSneaking = player.isSneaking();
+
+        player.connection.send(new ServerboundPlayerInputPacket(unsneakingInput));
+        player.setSneaking(false);
+        try {
+            client.gameMode.interactBlock(player, InteractionHand.MAIN_HAND, hitResult);
+        } finally {
+            player.setSneaking(wasSneaking);
+            if (originalInput.sneak()) {
+                player.connection.send(new ServerboundPlayerInputPacket(originalInput));
+            }
+        }
+    }
+
+    private static Input withSneak(Input input, boolean sneak) {
+        return new Input(
+                input.forward(),
+                input.backward(),
+                input.left(),
+                input.right(),
+                input.jump(),
+                sneak,
+                input.sprint()
+        );
+    }
+
+    private static void onEndTick(Minecraft client) {
+        if (client == null || client.getWindow() == null || !isAltDown(client.getWindow())) {
+            copiedCategoryId = Optional.empty();
+        }
+
         if (pendingAutoMove == null) {
             return;
         }
@@ -86,14 +184,23 @@ public final class AltClickMoveToStorageHandler {
 
         PendingAutoMove current = pendingAutoMove;
         if (current.remainingTicks() <= 0) {
+            sendActionBar(client, Component.translatable("latchlabel.drop.failed"));
             pendingAutoMove = null;
             return;
         }
 
-        if (client.currentScreen instanceof HandledScreen<?>) {
-            boolean moved = ContainerTagButtonManager.triggerMoveToStorageForCurrentScreen(client, current.target());
-            if (moved) {
-                client.player.closeHandledScreen();
+        if (client.currentScreen instanceof AbstractContainerScreen<?>) {
+            boolean hadMatchingStacks = current.operation() == AutoMoveOperation.PUSH_MATCHING_TO_STORAGE
+                    && ContainerTagButtonManager.hasMatchingPlayerStacksForCurrentScreen(client, current.target());
+            int movedStacks = switch (current.operation()) {
+                case PUSH_MATCHING_TO_STORAGE ->
+                        ContainerTagButtonManager.moveMatchingFromPlayerToStorageForCurrentScreen(client, current.target());
+                case PULL_NON_MATCHING_FROM_STORAGE ->
+                        ContainerTagButtonManager.moveNonMatchingFromStorageToPlayerForCurrentScreen(client, current.target());
+            };
+            if (movedStacks >= 0) {
+                client.player.closeContainer();
+                sendActionBar(client, current.operation().resultMessage(movedStacks, hadMatchingStacks));
                 pendingAutoMove = null;
                 return;
             }
@@ -104,12 +211,27 @@ public final class AltClickMoveToStorageHandler {
 
     private static boolean isAltDown(Window window) {
         return window != null && (
-                InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_LEFT_ALT)
-                        || InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_RIGHT_ALT)
+                InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
+                        || InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT)
         );
     }
 
-    private static boolean hasMatchingPlayerInventoryStacks(PlayerInventory inventory, String categoryId) {
+    private static boolean isShiftDown(Window window) {
+        return window != null && (
+                InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+                        || InputConstants.isKeyDown(window.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT)
+        );
+    }
+
+    private static String categoryName(String categoryId) {
+        Optional<Category> category = LatchLabelClientState.categoryStore().getById(categoryId);
+        if (category.isPresent()) {
+            return category.get().name();
+        }
+        return categoryId;
+    }
+
+    private static boolean hasMatchingInventoryStacks(Container inventory, String categoryId) {
         boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
 
         for (int slotIndex = 0; slotIndex < 36; slotIndex++) {
@@ -117,7 +239,7 @@ public final class AltClickMoveToStorageHandler {
                 continue;
             }
 
-            ItemStack stack = inventory.getStack(slotIndex);
+            ItemStack stack = inventory.getItem(slotIndex);
             if (stack.isEmpty()) {
                 continue;
             }
@@ -132,9 +254,66 @@ public final class AltClickMoveToStorageHandler {
         return false;
     }
 
-    private record PendingAutoMove(ChestKey target, int remainingTicks) {
-        private PendingAutoMove withRemainingTicks(int ticks) {
-            return new PendingAutoMove(target, ticks);
+    private static void sendActionBar(Minecraft client, Component text) {
+        if (client != null && client.player != null) {
+            client.player.sendMessage(text, true);
         }
     }
+
+    private enum AutoMoveOperation {
+        PUSH_MATCHING_TO_STORAGE(
+                "latchlabel.drop.starting",
+                "latchlabel.drop.finished",
+                "latchlabel.drop.no_matching_blocks",
+                "latchlabel.drop.storage_full"
+        ),
+        PULL_NON_MATCHING_FROM_STORAGE(
+                "latchlabel.pull.starting",
+                "latchlabel.pull.finished",
+                "latchlabel.pull.no_non_matching_blocks",
+                null
+        );
+
+        private final String startingTranslationKey;
+        private final String finishedTranslationKey;
+        private final String emptyTranslationKey;
+        private final String blockedTranslationKey;
+
+        AutoMoveOperation(
+                String startingTranslationKey,
+                String finishedTranslationKey,
+                String emptyTranslationKey,
+                String blockedTranslationKey
+        ) {
+            this.startingTranslationKey = startingTranslationKey;
+            this.finishedTranslationKey = finishedTranslationKey;
+            this.emptyTranslationKey = emptyTranslationKey;
+            this.blockedTranslationKey = blockedTranslationKey;
+        }
+
+        private String startingTranslationKey() {
+            return startingTranslationKey;
+        }
+
+        private Component resultMessage(int movedStacks, boolean hadEligibleItems) {
+            if (movedStacks > 0) {
+                return Component.translatable(finishedTranslationKey, movedStacks);
+            }
+            if (hadEligibleItems && blockedTranslationKey != null) {
+                return Component.translatable(blockedTranslationKey);
+            }
+            return Component.translatable(emptyTranslationKey);
+        }
+    }
+
+    private record PendingAutoMove(
+            ChestKey target,
+            AutoMoveOperation operation,
+            int remainingTicks
+    ) {
+        private PendingAutoMove withRemainingTicks(int ticks) {
+            return new PendingAutoMove(target, operation, ticks);
+        }
+    }
+
 }

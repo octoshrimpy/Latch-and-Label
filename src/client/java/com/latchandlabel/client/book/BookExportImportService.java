@@ -4,30 +4,28 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.latchandlabel.client.LatchLabel;
-import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.LatchLabelClientState; // used by scheduleSave, countCurrentTags, countCurrentCategories
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.CategoryStore;
 import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.WritableBookContentComponent;
-import net.minecraft.component.type.WrittenBookContentComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.BookUpdateC2SPacket;
-import net.minecraft.text.RawFilteredPair;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.WritableBookContent;
+import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
+import net.minecraft.util.FilteredText;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,85 +47,95 @@ public final class BookExportImportService {
     private BookExportImportService() {
     }
 
-    public static ExportResult exportToHeldBook(MinecraftClient client) {
+    public static ExportResult exportToHeldBook(
+            Minecraft client,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService
+    ) {
         if (client.player == null) {
-            return ExportResult.failure(Text.translatable("latchlabel.book.error_no_player"));
+            return ExportResult.failure(Component.translatable("latchlabel.book.error_no_player"));
         }
 
-        ItemStack heldStack = client.player.getMainHandStack();
-        if (!heldStack.isOf(Items.WRITABLE_BOOK)) {
-            return ExportResult.failure(Text.translatable("latchlabel.book.error_no_writable_book"));
+        ItemStack heldStack = client.player.getMainHandItem();
+        if (!heldStack.is(Items.WRITABLE_BOOK)) {
+            return ExportResult.failure(Component.translatable("latchlabel.book.error_no_writable_book"));
         }
-
-        TagStore tagStore = LatchLabelClientState.tagStore();
-        CategoryStore categoryStore = LatchLabelClientState.categoryStore();
-        ItemCategoryMappingService mappingService = LatchLabelClientState.itemCategoryMappingService();
 
         Map<ChestKey, String> tags = tagStore.snapshotTags();
         String lastUsedCategoryId = tagStore.getLastUsedCategoryId().orElse(null);
         List<Category> categories = categoryStore.listAll();
-        Map<Identifier, String> overrides = mappingService.snapshotOverrides();
-        Set<Identifier> blocked = mappingService.snapshotBlockedMappings();
+        Map<ResourceLocation, String> overrides = mappingService.snapshotOverrides();
+        Set<ResourceLocation> blocked = mappingService.snapshotBlockedMappings();
 
         String json = serializeToJson(tags, lastUsedCategoryId, categories, overrides, blocked);
         String payload = HEADER + json;
 
         List<String> pages = splitIntoPages(payload);
         if (pages.size() > MAX_PAGES) {
-            return ExportResult.failure(Text.translatable("latchlabel.book.error_data_too_large",
+            return ExportResult.failure(Component.translatable("latchlabel.book.error_data_too_large",
                     String.valueOf(pages.size()), String.valueOf(MAX_PAGES)));
         }
 
         int slot = client.player.getInventory().getSelectedSlot();
-        client.getNetworkHandler().sendPacket(
-                new BookUpdateC2SPacket(slot, pages, Optional.of(BOOK_TITLE))
+        client.getConnection().send(
+                new ServerboundEditBookPacket(slot, pages, Optional.of(BOOK_TITLE))
         );
 
         int tagCount = tags.size();
         int categoryCount = categories.size();
         return ExportResult.success(
-                Text.translatable("latchlabel.book.export_success",
+                Component.translatable("latchlabel.book.export_success",
                         String.valueOf(pages.size()), String.valueOf(tagCount), String.valueOf(categoryCount)),
                 pages.size(), tagCount, categoryCount
         );
     }
 
-    public static ImportResult importFromHeldBook(MinecraftClient client) {
+    public static ImportResult importFromHeldBook(
+            Minecraft client,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService
+    ) {
         if (client.player == null) {
-            return ImportResult.failure(Text.translatable("latchlabel.book.error_no_player"));
+            return ImportResult.failure(Component.translatable("latchlabel.book.error_no_player"));
         }
 
-        ItemStack heldStack = client.player.getMainHandStack();
+        ItemStack heldStack = client.player.getMainHandItem();
         List<String> pages = extractPages(heldStack);
         if (pages == null) {
-            return ImportResult.failure(Text.translatable("latchlabel.book.error_no_book"));
+            return ImportResult.failure(Component.translatable("latchlabel.book.error_no_book"));
         }
         if (pages.isEmpty()) {
-            return ImportResult.failure(Text.translatable("latchlabel.book.error_book_empty"));
+            return ImportResult.failure(Component.translatable("latchlabel.book.error_book_empty"));
         }
 
         String fullText = String.join("", pages);
         if (!fullText.startsWith(HEADER)) {
-            return ImportResult.failure(Text.translatable("latchlabel.book.error_invalid_header"));
+            return ImportResult.failure(Component.translatable("latchlabel.book.error_invalid_header"));
         }
 
         String json = fullText.substring(HEADER.length());
-        BookData bookData;
+        ParsedBook parsed;
         try {
-            bookData = deserializeFromJson(json);
+            parsed = deserializeFromJson(json);
         } catch (Exception e) {
             LatchLabel.LOGGER.warn("Failed to parse book data", e);
-            return ImportResult.failure(Text.translatable("latchlabel.book.error_invalid_data", e.getMessage()));
+            return ImportResult.failure(Component.translatable("latchlabel.book.error_invalid_data", e.getMessage()));
         }
 
-        int tagsImported = mergeData(bookData);
+        BookData bookData = parsed.data();
+        int tagsImported = mergeData(bookData, tagStore, categoryStore, mappingService);
         LatchLabelClientState.dataManager().scheduleSave();
 
-        return ImportResult.success(
-                Text.translatable("latchlabel.book.import_success",
-                        String.valueOf(tagsImported), String.valueOf(bookData.categories.size())),
-                tagsImported, bookData.categories.size()
-        );
+        Component message = Component.translatable("latchlabel.book.import_success",
+                String.valueOf(tagsImported), String.valueOf(bookData.categories.size()));
+        if (parsed.skippedChestKeys() > 0) {
+            LatchLabel.LOGGER.warn("Book import skipped {} invalid chest key(s)", parsed.skippedChestKeys());
+            message = message.copy().append(Component.translatable("latchlabel.book.import_skipped_keys",
+                    String.valueOf(parsed.skippedChestKeys())));
+        }
+        return ImportResult.success(message, tagsImported, bookData.categories.size());
     }
 
     public static boolean isLatchLabelBook(ItemStack stack) {
@@ -135,8 +143,8 @@ public final class BookExportImportService {
             return false;
         }
 
-        if (stack.isOf(Items.WRITTEN_BOOK)) {
-            WrittenBookContentComponent content = stack.get(DataComponentTypes.WRITTEN_BOOK_CONTENT);
+        if (stack.is(Items.WRITTEN_BOOK)) {
+            WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
             if (content == null || content.pages().isEmpty()) {
                 return false;
             }
@@ -144,8 +152,8 @@ public final class BookExportImportService {
             return firstPage.startsWith("Latch & Label");
         }
 
-        if (stack.isOf(Items.WRITABLE_BOOK)) {
-            WritableBookContentComponent content = stack.get(DataComponentTypes.WRITABLE_BOOK_CONTENT);
+        if (stack.is(Items.WRITABLE_BOOK)) {
+            WritableBookContent content = stack.get(DataComponents.WRITABLE_BOOK_CONTENT);
             if (content == null || content.pages().isEmpty()) {
                 return false;
             }
@@ -169,25 +177,25 @@ public final class BookExportImportService {
             return null;
         }
 
-        if (stack.isOf(Items.WRITTEN_BOOK)) {
-            WrittenBookContentComponent content = stack.get(DataComponentTypes.WRITTEN_BOOK_CONTENT);
+        if (stack.is(Items.WRITTEN_BOOK)) {
+            WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
             if (content == null) {
                 return null;
             }
             List<String> pages = new ArrayList<>();
-            for (RawFilteredPair<Text> page : content.pages()) {
+            for (FilteredText page : content.pages()) {
                 pages.add(page.raw().getString());
             }
             return pages;
         }
 
-        if (stack.isOf(Items.WRITABLE_BOOK)) {
-            WritableBookContentComponent content = stack.get(DataComponentTypes.WRITABLE_BOOK_CONTENT);
+        if (stack.is(Items.WRITABLE_BOOK)) {
+            WritableBookContent content = stack.get(DataComponents.WRITABLE_BOOK_CONTENT);
             if (content == null) {
                 return null;
             }
             List<String> pages = new ArrayList<>();
-            for (RawFilteredPair<String> page : content.pages()) {
+            for (FilteredText page : content.pages()) {
                 pages.add(page.raw());
             }
             return pages;
@@ -200,8 +208,8 @@ public final class BookExportImportService {
             Map<ChestKey, String> tags,
             String lastUsedCategoryId,
             List<Category> categories,
-            Map<Identifier, String> overrides,
-            Set<Identifier> blocked
+            Map<ResourceLocation, String> overrides,
+            Set<ResourceLocation> blocked
     ) {
         JsonObject root = new JsonObject();
         root.addProperty("v", CURRENT_VERSION);
@@ -231,7 +239,7 @@ public final class BookExportImportService {
 
         if (!overrides.isEmpty()) {
             JsonObject overridesObj = new JsonObject();
-            for (Map.Entry<Identifier, String> entry : overrides.entrySet()) {
+            for (Map.Entry<ResourceLocation, String> entry : overrides.entrySet()) {
                 overridesObj.addProperty(entry.getKey().toString(), entry.getValue());
             }
             root.add("io", overridesObj);
@@ -239,7 +247,7 @@ public final class BookExportImportService {
 
         if (!blocked.isEmpty()) {
             JsonArray blockedArr = new JsonArray();
-            for (Identifier id : blocked) {
+            for (ResourceLocation id : blocked) {
                 blockedArr.add(id.toString());
             }
             root.add("bl", blockedArr);
@@ -248,10 +256,14 @@ public final class BookExportImportService {
         return COMPACT_GSON.toJson(root);
     }
 
-    private static BookData deserializeFromJson(String json) {
+    private record ParsedBook(BookData data, int skippedChestKeys) {
+    }
+
+    private static ParsedBook deserializeFromJson(String json) {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
 
         Map<ChestKey, String> tags = new HashMap<>();
+        int skippedChestKeys = 0;
         JsonElement tagsEl = root.get("t");
         if (tagsEl != null && tagsEl.isJsonObject()) {
             for (Map.Entry<String, JsonElement> entry : tagsEl.getAsJsonObject().entrySet()) {
@@ -262,6 +274,7 @@ public final class BookExportImportService {
                     tags.put(ChestKey.fromStringKey(entry.getKey()), entry.getValue().getAsString());
                 } catch (IllegalArgumentException e) {
                     LatchLabel.LOGGER.warn("Skipping invalid chest key '{}' from book", entry.getKey());
+                    skippedChestKeys++;
                 }
             }
         }
@@ -286,11 +299,11 @@ public final class BookExportImportService {
             }
         }
 
-        Map<Identifier, String> overrides = new LinkedHashMap<>();
+        Map<ResourceLocation, String> overrides = new LinkedHashMap<>();
         JsonElement ioEl = root.get("io");
         if (ioEl != null && ioEl.isJsonObject()) {
             for (Map.Entry<String, JsonElement> entry : ioEl.getAsJsonObject().entrySet()) {
-                Identifier itemId = Identifier.tryParse(entry.getKey());
+                ResourceLocation itemId = ResourceLocation.tryParse(entry.getKey());
                 if (itemId == null) {
                     continue;
                 }
@@ -300,12 +313,12 @@ public final class BookExportImportService {
             }
         }
 
-        Set<Identifier> blocked = new LinkedHashSet<>();
+        Set<ResourceLocation> blocked = new LinkedHashSet<>();
         JsonElement blEl = root.get("bl");
         if (blEl != null && blEl.isJsonArray()) {
             for (JsonElement el : blEl.getAsJsonArray()) {
                 if (el.isJsonPrimitive()) {
-                    Identifier itemId = Identifier.tryParse(el.getAsString());
+                    ResourceLocation itemId = ResourceLocation.tryParse(el.getAsString());
                     if (itemId != null) {
                         blocked.add(itemId);
                     }
@@ -313,7 +326,7 @@ public final class BookExportImportService {
             }
         }
 
-        return new BookData(tags, lastUsedCategoryId, categories, overrides, blocked);
+        return new ParsedBook(new BookData(tags, lastUsedCategoryId, categories, overrides, blocked), skippedChestKeys);
     }
 
     private static Category parseCategory(JsonObject obj) {
@@ -325,9 +338,9 @@ public final class BookExportImportService {
             return null;
         }
 
-        Identifier iconItemId = Identifier.tryParse(iconItemIdRaw);
+        ResourceLocation iconItemId = ResourceLocation.tryParse(iconItemIdRaw);
         if (iconItemId == null) {
-            iconItemId = Identifier.tryParse("minecraft:stone");
+            iconItemId = ResourceLocation.tryParse("minecraft:stone");
         }
 
         int color = asInt(obj.get("cl"), 0x8A8A8A);
@@ -341,11 +354,12 @@ public final class BookExportImportService {
         }
     }
 
-    private static int mergeData(BookData bookData) {
-        CategoryStore categoryStore = LatchLabelClientState.categoryStore();
-        TagStore tagStore = LatchLabelClientState.tagStore();
-        ItemCategoryMappingService mappingService = LatchLabelClientState.itemCategoryMappingService();
-
+    private static int mergeData(
+            BookData bookData,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService
+    ) {
         // Merge categories: update existing, add new
         List<Category> existing = new ArrayList<>(categoryStore.listAll());
         Map<String, Integer> existingIndex = new HashMap<>();
@@ -374,11 +388,11 @@ public final class BookExportImportService {
         }
 
         // Merge item overrides
-        Map<Identifier, String> currentOverrides = new LinkedHashMap<>(mappingService.snapshotOverrides());
-        Set<Identifier> currentBlocked = new LinkedHashSet<>(mappingService.snapshotBlockedMappings());
+        Map<ResourceLocation, String> currentOverrides = new LinkedHashMap<>(mappingService.snapshotOverrides());
+        Set<ResourceLocation> currentBlocked = new LinkedHashSet<>(mappingService.snapshotBlockedMappings());
 
         currentOverrides.putAll(bookData.overrides);
-        for (Identifier blockedId : bookData.blocked) {
+        for (ResourceLocation blockedId : bookData.blocked) {
             currentOverrides.remove(blockedId);
             currentBlocked.add(blockedId);
         }
@@ -422,22 +436,22 @@ public final class BookExportImportService {
         return element.getAsBoolean();
     }
 
-    public record ExportResult(boolean success, Text message, int pageCount, int tagCount, int categoryCount) {
-        static ExportResult success(Text message, int pageCount, int tagCount, int categoryCount) {
+    public record ExportResult(boolean success, Component message, int pageCount, int tagCount, int categoryCount) {
+        static ExportResult success(Component message, int pageCount, int tagCount, int categoryCount) {
             return new ExportResult(true, message, pageCount, tagCount, categoryCount);
         }
 
-        static ExportResult failure(Text message) {
+        static ExportResult failure(Component message) {
             return new ExportResult(false, message, 0, 0, 0);
         }
     }
 
-    public record ImportResult(boolean success, Text message, int tagsImported, int categoriesImported) {
-        static ImportResult success(Text message, int tagsImported, int categoriesImported) {
+    public record ImportResult(boolean success, Component message, int tagsImported, int categoriesImported) {
+        static ImportResult success(Component message, int tagsImported, int categoriesImported) {
             return new ImportResult(true, message, tagsImported, categoriesImported);
         }
 
-        static ImportResult failure(Text message) {
+        static ImportResult failure(Component message) {
             return new ImportResult(false, message, 0, 0);
         }
     }
@@ -446,8 +460,8 @@ public final class BookExportImportService {
             Map<ChestKey, String> tags,
             String lastUsedCategoryId,
             List<Category> categories,
-            Map<Identifier, String> overrides,
-            Set<Identifier> blocked
+            Map<ResourceLocation, String> overrides,
+            Set<ResourceLocation> blocked
     ) {
     }
 }

@@ -1,14 +1,14 @@
 package com.latchandlabel.client.render;
 
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.PoseStack;
 
 public final class RenderBox {
     private RenderBox() {
     }
 
     public static void drawFilledBox(
-            MatrixStack matrices,
+            PoseStack matrices,
             VertexConsumer consumer,
             double minX,
             double minY,
@@ -25,7 +25,7 @@ public final class RenderBox {
     }
 
     public static void drawFilledBox(
-            MatrixStack.Entry entry,
+            PoseStack.Entry entry,
             VertexConsumer consumer,
             double minX,
             double minY,
@@ -89,7 +89,7 @@ public final class RenderBox {
     }
 
     private static void quad(
-            MatrixStack.Entry entry,
+            PoseStack.Entry entry,
             VertexConsumer consumer,
             double x1,
             double y1,
