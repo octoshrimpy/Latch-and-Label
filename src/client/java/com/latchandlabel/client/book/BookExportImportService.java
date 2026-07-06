@@ -7,7 +7,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.latchandlabel.client.LatchLabel;
-import com.latchandlabel.client.LatchLabelClientState; // used by scheduleSave, countCurrentTags, countCurrentCategories
+import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.McCompat;
+import com.latchandlabel.client.find.FindSettings;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.store.CategoryStore;
@@ -15,14 +17,18 @@ import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.WritableBookContent;
-import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.network.Filterable;
+import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
-import net.minecraft.server.network.Filterable;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.component.WritableBookContent;
+import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,10 +41,12 @@ import java.util.Set;
 
 public final class BookExportImportService {
     private static final String HEADER = "Latch & Label\n";
-    private static final String BOOK_TITLE = "Latch & Label Export";
     private static final int MAX_PAGE_LENGTH = 1024;
+    // Vanilla kicks on rapid ServerboundEditBookPacket ("book edited too quickly"); throttle writes.
+    private static final long MIN_WRITE_INTERVAL_MS = 2000L;
+    private static long lastWriteMs = 0L;
     private static final int MAX_PAGES = 100;
-    private static final int CURRENT_VERSION = 1;
+    private static final int CURRENT_VERSION = 2;
 
     private static final Gson COMPACT_GSON = new GsonBuilder()
             .disableHtmlEscaping()
@@ -53,8 +61,52 @@ public final class BookExportImportService {
             CategoryStore categoryStore,
             ItemCategoryMappingService mappingService
     ) {
+        return exportToHeldBookInternal(client, tagStore, categoryStore, mappingService, false, null);
+    }
+
+    public static ExportResult exportNearbyToHeldBook(
+            Minecraft client,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService
+    ) {
+        return exportToHeldBookInternal(client, tagStore, categoryStore, mappingService, true, null);
+    }
+
+    /** Nearby export seeded at a specific chest rather than the player. */
+    public static ExportResult exportNearbyToHeldBook(
+            Minecraft client,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService,
+            BlockPos origin
+    ) {
+        return exportToHeldBookInternal(client, tagStore, categoryStore, mappingService, true,
+                origin == null ? null : Vec3.atCenterOf(origin));
+    }
+
+    /** The tagged chests that a nearby export seeded at {@code origin} would include. */
+    public static Set<ChestKey> nearbyTaggedKeys(Minecraft client, BlockPos origin) {
+        if (client == null || client.player == null || client.level == null) {
+            return Set.of();
+        }
+        return filterTagsToNearby(client, LatchLabelClientState.tagStore().snapshotTags(),
+                origin == null ? null : Vec3.atCenterOf(origin)).keySet();
+    }
+
+    private static ExportResult exportToHeldBookInternal(
+            Minecraft client,
+            TagStore tagStore,
+            CategoryStore categoryStore,
+            ItemCategoryMappingService mappingService,
+            boolean nearby,
+            Vec3 origin
+    ) {
         if (client.player == null) {
             return ExportResult.failure(Component.translatable("latchlabel.book.error_no_player"));
+        }
+        if (nearby && client.level == null) {
+            return ExportResult.failure(Component.translatable("latchlabel.find.error_world_unavailable"));
         }
 
         ItemStack heldStack = client.player.getMainHandItem();
@@ -62,13 +114,14 @@ public final class BookExportImportService {
             return ExportResult.failure(Component.translatable("latchlabel.book.error_no_writable_book"));
         }
 
-        Map<ChestKey, String> tags = tagStore.snapshotTags();
+        Map<ChestKey, String> allTags = tagStore.snapshotTags();
+        Map<ChestKey, String> tags = nearby ? filterTagsToNearby(client, allTags, origin) : allTags;
         String lastUsedCategoryId = tagStore.getLastUsedCategoryId().orElse(null);
         List<Category> categories = categoryStore.listAll();
         Map<Identifier, String> overrides = mappingService.snapshotOverrides();
         Set<Identifier> blocked = mappingService.snapshotBlockedMappings();
 
-        String json = serializeToJson(tags, lastUsedCategoryId, categories, overrides, blocked);
+        String json = serializeToJson(tags, lastUsedCategoryId, categories, overrides, blocked, nearby);
         String payload = HEADER + json;
 
         List<String> pages = splitIntoPages(payload);
@@ -77,13 +130,35 @@ public final class BookExportImportService {
                     String.valueOf(pages.size()), String.valueOf(MAX_PAGES)));
         }
 
+        // Skip the write entirely if the book already holds exactly this payload (idempotent + avoids the kick).
+        List<String> currentPages = extractPages(heldStack);
+        if (currentPages != null && currentPages.equals(pages)) {
+            return ExportResult.success(Component.translatable("latchlabel.book.export_up_to_date"),
+                    pages.size(), tags.size(), categories.size());
+        }
+        long nowMs = System.currentTimeMillis();
+        if (nowMs - lastWriteMs < MIN_WRITE_INTERVAL_MS) {
+            return ExportResult.failure(Component.translatable("latchlabel.book.export_too_fast"));
+        }
+
         int slot = client.player.getInventory().getSelectedSlot();
+        // ponytail: empty title = server saves draft (writable_book, overwritable) instead of signing to immutable written_book.
         client.getConnection().send(
-                new ServerboundEditBookPacket(slot, pages, Optional.of(BOOK_TITLE))
+                new ServerboundEditBookPacket(slot, pages, Optional.empty())
         );
+        lastWriteMs = nowMs;
 
         int tagCount = tags.size();
         int categoryCount = categories.size();
+        if (nearby) {
+            return ExportResult.success(
+                    Component.translatable("latchlabel.book.export_nearby_success",
+                            String.valueOf(tagCount),
+                            String.valueOf(allTags.size() - tagCount),
+                            String.valueOf(pages.size())),
+                    pages.size(), tagCount, categoryCount
+            );
+        }
         return ExportResult.success(
                 Component.translatable("latchlabel.book.export_success",
                         String.valueOf(pages.size()), String.valueOf(tagCount), String.valueOf(categoryCount)),
@@ -125,11 +200,27 @@ public final class BookExportImportService {
         }
 
         BookData bookData = parsed.data();
+        int nearbySkipped = 0;
+        if (parsed.nearby()) {
+            FilteredTags filteredTags = filterTagsToExistingContainers(client, bookData.tags());
+            nearbySkipped = filteredTags.skippedCount();
+            bookData = new BookData(
+                    filteredTags.tags(),
+                    bookData.lastUsedCategoryId(),
+                    bookData.categories(),
+                    bookData.overrides(),
+                    bookData.blocked()
+            );
+        }
+
         int tagsImported = mergeData(bookData, tagStore, categoryStore, mappingService);
         LatchLabelClientState.dataManager().scheduleSave();
 
-        Component message = Component.translatable("latchlabel.book.import_success",
-                String.valueOf(tagsImported), String.valueOf(bookData.categories.size()));
+        Component message = parsed.nearby()
+                ? Component.translatable("latchlabel.book.import_nearby_success",
+                        String.valueOf(tagsImported), String.valueOf(nearbySkipped))
+                : Component.translatable("latchlabel.book.import_success",
+                        String.valueOf(tagsImported), String.valueOf(bookData.categories.size()));
         if (parsed.skippedChestKeys() > 0) {
             LatchLabel.LOGGER.warn("Book import skipped {} invalid chest key(s)", parsed.skippedChestKeys());
             message = message.copy().append(Component.translatable("latchlabel.book.import_skipped_keys",
@@ -172,6 +263,13 @@ public final class BookExportImportService {
         return LatchLabelClientState.categoryStore().listAll().size();
     }
 
+    public static int countCurrentNearbyTags(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
+            return 0;
+        }
+        return filterTagsToNearby(client, LatchLabelClientState.tagStore().snapshotTags(), null).size();
+    }
+
     private static List<String> extractPages(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return null;
@@ -183,7 +281,7 @@ public final class BookExportImportService {
                 return null;
             }
             List<String> pages = new ArrayList<>();
-            for (Filterable<net.minecraft.network.chat.Component> page : content.pages()) {
+            for (Filterable<Component> page : content.pages()) {
                 pages.add(page.raw().getString());
             }
             return pages;
@@ -209,10 +307,14 @@ public final class BookExportImportService {
             String lastUsedCategoryId,
             List<Category> categories,
             Map<Identifier, String> overrides,
-            Set<Identifier> blocked
+            Set<Identifier> blocked,
+            boolean nearby
     ) {
         JsonObject root = new JsonObject();
         root.addProperty("v", CURRENT_VERSION);
+        if (nearby) {
+            root.addProperty("n", true);
+        }
 
         JsonObject tagsObj = new JsonObject();
         for (Map.Entry<ChestKey, String> entry : tags.entrySet()) {
@@ -256,7 +358,61 @@ public final class BookExportImportService {
         return COMPACT_GSON.toJson(root);
     }
 
-    private record ParsedBook(BookData data, int skippedChestKeys) {
+    private static Map<ChestKey, String> filterTagsToNearby(Minecraft client, Map<ChestKey, String> tags, Vec3 originOrNull) {
+        if (client.player == null || client.level == null) {
+            return Map.of();
+        }
+
+        Identifier dimensionId = McCompat.dimensionId(client.level);
+        Vec3 origin = originOrNull != null ? originOrNull : client.player.position();
+        int radius = FindSettings.defaultFindRadius();
+        double radiusSquared = (double) radius * radius;
+
+        Map<ChestKey, String> filtered = new LinkedHashMap<>();
+        for (Map.Entry<ChestKey, String> entry : tags.entrySet()) {
+            ChestKey chestKey = entry.getKey();
+            if (!chestKey.dimensionId().equals(dimensionId)) {
+                continue;
+            }
+            if (chestKey.pos().distToCenterSqr(origin) > radiusSquared) {
+                continue;
+            }
+            filtered.put(chestKey, entry.getValue());
+        }
+        return filtered;
+    }
+
+    private static FilteredTags filterTagsToExistingContainers(Minecraft client, Map<ChestKey, String> tags) {
+        if (client.level == null) {
+            return new FilteredTags(Map.of(), tags.size());
+        }
+
+        Identifier dimensionId = McCompat.dimensionId(client.level);
+        Map<ChestKey, String> filtered = new LinkedHashMap<>();
+        int skippedCount = 0;
+
+        for (Map.Entry<ChestKey, String> entry : tags.entrySet()) {
+            ChestKey chestKey = entry.getKey();
+            if (!chestKey.dimensionId().equals(dimensionId)) {
+                skippedCount++;
+                continue;
+            }
+
+            BlockEntity blockEntity = client.level.getBlockEntity(chestKey.pos());
+            if (!(blockEntity instanceof Container)) {
+                skippedCount++;
+                continue;
+            }
+
+            filtered.put(chestKey, entry.getValue());
+        }
+        return new FilteredTags(filtered, skippedCount);
+    }
+
+    private record ParsedBook(BookData data, int skippedChestKeys, boolean nearby) {
+    }
+
+    private record FilteredTags(Map<ChestKey, String> tags, int skippedCount) {
     }
 
     private static ParsedBook deserializeFromJson(String json) {
@@ -326,7 +482,8 @@ public final class BookExportImportService {
             }
         }
 
-        return new ParsedBook(new BookData(tags, lastUsedCategoryId, categories, overrides, blocked), skippedChestKeys);
+        boolean nearby = asBoolean(root.get("n"), false);
+        return new ParsedBook(new BookData(tags, lastUsedCategoryId, categories, overrides, blocked), skippedChestKeys, nearby);
     }
 
     private static Category parseCategory(JsonObject obj) {
@@ -360,7 +517,6 @@ public final class BookExportImportService {
             CategoryStore categoryStore,
             ItemCategoryMappingService mappingService
     ) {
-        // Merge categories: update existing, add new
         List<Category> existing = new ArrayList<>(categoryStore.listAll());
         Map<String, Integer> existingIndex = new HashMap<>();
         for (int i = 0; i < existing.size(); i++) {
@@ -376,7 +532,6 @@ public final class BookExportImportService {
         }
         categoryStore.replaceAll(existing);
 
-        // Merge tags
         int tagsImported = 0;
         for (Map.Entry<ChestKey, String> entry : bookData.tags.entrySet()) {
             tagStore.setTag(entry.getKey(), entry.getValue());
@@ -387,7 +542,6 @@ public final class BookExportImportService {
             tagStore.setLastUsedCategoryId(bookData.lastUsedCategoryId);
         }
 
-        // Merge item overrides
         Map<Identifier, String> currentOverrides = new LinkedHashMap<>(mappingService.snapshotOverrides());
         Set<Identifier> currentBlocked = new LinkedHashSet<>(mappingService.snapshotBlockedMappings());
 

@@ -10,3 +10,6 @@ run/
 # Fabric dev runtime artifacts
 logs/
 crash-reports/
+
+# Stray built jars in repo root
+*.jar

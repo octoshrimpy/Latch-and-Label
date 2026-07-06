@@ -1,5 +1,6 @@
 package com.latchandlabel.client.input;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.book.BookConfirmScreen;
 import com.latchandlabel.client.book.BookExportImportService;
@@ -9,6 +10,7 @@ import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.KeybindSettings;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.find.FindCommand;
+import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import com.latchandlabel.client.tagging.TaggingController;
 import com.latchandlabel.client.targeting.ContainerTargeting;
@@ -34,6 +36,7 @@ public final class ClientInputHandler {
     private static KeyMapping openPickerKey;
     private static KeyMapping findShortcutKey;
     private static KeyMapping moveToStorageKey;
+    private static KeyMapping findCycleKey;
     private static volatile boolean inspectModeActive;
 
     private ClientInputHandler() {
@@ -58,6 +61,12 @@ public final class ClientInputHandler {
                 KeybindSettings.moveToStorageKeyCode(),
                 CATEGORY
         ));
+        findCycleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.latchlabel.find_cycle",
+                InputConstants.Type.KEYSYM,
+                KeybindSettings.findCycleKeyCode(),
+                CATEGORY
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientInputHandler::onEndTick);
     }
@@ -70,19 +79,12 @@ public final class ClientInputHandler {
         openPickerKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(KeybindSettings.openPickerKeyCode()));
         findShortcutKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(KeybindSettings.findShortcutKeyCode()));
         moveToStorageKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(KeybindSettings.moveToStorageKeyCode()));
+        findCycleKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(KeybindSettings.findCycleKeyCode()));
         KeyMapping.resetMapping();
     }
 
     public static boolean isInspectModeActive() {
         return inspectModeActive;
-    }
-
-    public static boolean isShiftDown() {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.getWindow() == null) {
-            return false;
-        }
-        return isModifierDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     public static boolean isAltDown() {
@@ -100,15 +102,13 @@ public final class ClientInputHandler {
         }
 
         Window window = client.getWindow();
-        boolean isShiftDown = isModifierDown(window, GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT);
         boolean isCtrlDown = isModifierDown(window, GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL);
         boolean isAltDown = isModifierDown(window, GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT);
 
-        boolean isSneaking = client.player != null && client.player.isShiftKeyDown();
-        inspectModeActive = InspectSettings.isInspectActive(isAltDown, isSneaking);
+        inspectModeActive = InspectSettings.isInspectActive(isAltDown);
 
         while (openPickerKey.consumeClick()) {
-            onOpenPickerPressed(client, isShiftDown, isCtrlDown);
+            onOpenPickerPressed(client, isAltDown, isCtrlDown);
         }
         while (findShortcutKey.consumeClick()) {
             onFindShortcutPressed(client);
@@ -116,9 +116,12 @@ public final class ClientInputHandler {
         while (moveToStorageKey.consumeClick()) {
             onMoveToStoragePressed(client);
         }
+        while (findCycleKey.consumeClick()) {
+            FindResultState.cycleTarget();
+        }
     }
 
-    private static void onOpenPickerPressed(Minecraft client, boolean isShiftDown, boolean isCtrlDown) {
+    private static void onOpenPickerPressed(Minecraft client, boolean isAltDown, boolean isCtrlDown) {
         Optional<ChestKey> target = ContainerTargeting.getTargetedContainer(client);
         if (target.isEmpty()) {
             if (client.player != null && tryBookInteraction(client)) {
@@ -133,7 +136,7 @@ public final class ClientInputHandler {
             return;
         }
 
-        if (isShiftDown) {
+        if (isAltDown) {
             quickApplyLastUsed(target.get(), LatchLabelClientState.tagStore());
             return;
         }
@@ -163,11 +166,11 @@ public final class ClientInputHandler {
     private static boolean tryBookInteraction(Minecraft client) {
         ItemStack heldStack = client.player.getMainHandItem();
         if (heldStack.is(Items.WRITABLE_BOOK)) {
-            client.gui.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT));
+            McCompat.setScreen(client, new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT_PICKER));
             return true;
         }
         if (heldStack.is(Items.WRITTEN_BOOK) && BookExportImportService.isLatchLabelBook(heldStack)) {
-            client.gui.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
+            McCompat.setScreen(client, new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
             return true;
         }
         return false;

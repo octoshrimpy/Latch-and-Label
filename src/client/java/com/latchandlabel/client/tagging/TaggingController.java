@@ -1,6 +1,7 @@
 package com.latchandlabel.client.tagging;
 
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.ui.CategoryPickerScreen;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -21,9 +22,9 @@ public final class TaggingController {
             return;
         }
         ChestKey resolvedKey = resolveKey(client, chestKey);
-        Screen parentScreen = client.gui.screen();
+        Screen parentScreen = McCompat.getScreen(client);
 
-        client.gui.setScreen(new CategoryPickerScreen(
+        McCompat.setScreen(client, new CategoryPickerScreen(
                 parentScreen,
                 resolvedKey,
                 categoryId -> {

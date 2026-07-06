@@ -1,11 +1,13 @@
 package com.latchandlabel.client.inspect;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
+import com.latchandlabel.client.render.CornerBracketRenderer;
 import com.latchandlabel.client.render.RenderLayerCompat;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -31,23 +33,18 @@ import java.util.Set;
 public final class InspectModeRenderer {
     private static final int MAX_CONTAINERS_PER_FRAME = 72;
     private static final double BASE_OUTLINE_EXPAND = 0.0015;
-    private static final float BASE_OUTLINE_ALPHA = 0.52f;
-    private static final float MATCH_OUTLINE_ALPHA = 0.90f;
-    private static final double THICK_NEAR = 0.040;
-    private static final double THICK_MID = 0.028;
-    private static final double THICK_FAR = 0.018;
-    private static final double THIN_NEAR = 0.020;
-    private static final double ALT_TARGET_NEAR = 0.030;
-    private static final double ALT_TARGET_MID = 0.023;
-    private static final double ALT_TARGET_FAR = 0.018;
-    private static final double LOD_NEAR_DISTANCE = 12.0;
+    // Uniform line width everywhere: state reads from shape (full outline vs corner brackets + marker), not thickness.
+    private static final float OUTLINE_THICKNESS = 0.020f;
+    private static final float BRACKET_THICKNESS = 0.022f;
+    private static final float BRACKET_LEG_LENGTH = 0.22f;
+    private static final float PLAIN_ALPHA = 0.45f;
+    private static final float FULL_OUTLINE_ALPHA = 0.15f;
+    private static final float INV_TARGET_ALPHA = 0.85f;
+    private static final float HELD_MATCH_ALPHA = 0.95f;
     private static final double LOD_MID_DISTANCE = 24.0;
     private static final double FRUSTUM_MARGIN = 0.06;
     private static final double MATCH_PULSE_SPEED_RADIANS = 6.0;
-    private static final double MATCH_PULSE_MIN_SCALE = 1.0;
-    private static final double MATCH_PULSE_MAX_SCALE = 1.35;
-    private static final float FULL_OUTLINE_ALPHA = 0.15f;
-    private static final float ALT_TARGET_ALPHA = 0.78f;
+    private static final double MARKER_BOB_AMPLITUDE = 0.06;
 
     private InspectModeRenderer() {
     }
@@ -57,26 +54,28 @@ public final class InspectModeRenderer {
         if (client == null || client.player == null || client.level == null) {
             return;
         }
-        if (!ClientInputHandler.isInspectModeActive()) {
+        boolean inspect = ClientInputHandler.isInspectModeActive();
+        boolean always = InspectSettings.bordersAlwaysVisible();
+        if (!inspect && !always) {
             return;
         }
 
         Level world = client.level;
-        Identifier dimensionId = world.dimension().identifier();
-        Vec3 cameraPos = client.gameRenderer.mainCamera().position();
+        Identifier dimensionId = McCompat.dimensionId(world);
+        Vec3 cameraPos = McCompat.mainCamera(client).position();
         double maxDistanceSq = Math.pow(InspectSettings.inspectRange(), 2);
-        double nearDistanceSq = LOD_NEAR_DISTANCE * LOD_NEAR_DISTANCE;
         double midDistanceSq = LOD_MID_DISTANCE * LOD_MID_DISTANCE;
         long frameParity = world.getGameTime() & 1L;
         Frustum frustum = context.levelState().cameraRenderState.cullFrustum;
 
         Map<ChestKey, String> tags = LatchLabelClientState.tagStore().snapshotTags();
-        Optional<String> heldItemCategoryId = LatchLabelClientState.itemCategoryMappingService()
-                .categoryIdFor(client.player.getMainHandItem());
-        boolean isAltDown = ClientInputHandler.isAltDown();
+        // Held/inventory matches only apply while actively inspecting; always-on shows plain borders only.
+        Optional<String> heldItemCategoryId = inspect
+                ? LatchLabelClientState.itemCategoryMappingService().categoryIdFor(client.player.getMainHandItem())
+                : Optional.empty();
+        boolean isAltDown = inspect && ClientInputHandler.isAltDown();
         Set<String> inventoryCategoryIds = isAltDown ? collectMoveCategoryIds(client) : Set.of();
         double pulse = 0.5 + (0.5 * Math.sin((System.currentTimeMillis() / 1000.0) * MATCH_PULSE_SPEED_RADIANS));
-        double pulseScale = MATCH_PULSE_MIN_SCALE + ((MATCH_PULSE_MAX_SCALE - MATCH_PULSE_MIN_SCALE) * pulse);
 
         List<InspectCandidate> candidates = new ArrayList<>();
         Set<ChestKey> renderedKeys = new HashSet<>();
@@ -134,53 +133,40 @@ public final class InspectModeRenderer {
         final double camX = cameraPos.x;
         final double camY = cameraPos.y;
         final double camZ = cameraPos.z;
-        final double finalPulseScale = pulseScale;
+        final double finalPulse = pulse;
         final List<InspectCandidate> finalCandidates = candidates;
-        final double finalNearSq = nearDistanceSq;
-        final double finalMidSq = midDistanceSq;
 
         PoseStack matrices = context.poseStack();
         matrices.pushPose();
         matrices.translate(-camX, -camY, -camZ);
 
         context.submitNodeCollector().submitCustomGeometry(matrices, RenderLayerCompat.debugFilledBox(), (pose, consumer) -> {
+            double bob = (finalPulse - 0.5) * 2.0 * MARKER_BOB_AMPLITUDE;
             int rendered = 0;
             for (InspectCandidate candidate : finalCandidates) {
                 if (rendered >= MAX_CONTAINERS_PER_FRAME) {
                     break;
                 }
 
-                AABB box = candidate.box();
+                AABB box = candidate.box().inflate(BASE_OUTLINE_EXPAND);
                 float r = candidate.r();
                 float g = candidate.g();
                 float b = candidate.b();
-                double distanceSq = candidate.distanceSq();
 
-                float alpha;
                 if (candidate.isFull()) {
-                    alpha = FULL_OUTLINE_ALPHA;
+                    // Full storage: faint full outline, no target cue.
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box, OUTLINE_THICKNESS, r, g, b, FULL_OUTLINE_ALPHA);
                 } else if (candidate.matchesHeldCategory()) {
-                    alpha = MATCH_OUTLINE_ALPHA;
+                    // Item you're holding goes here: brackets + floating marker + breathing alpha.
+                    float a = HELD_MATCH_ALPHA * (float) (0.7 + 0.3 * finalPulse);
+                    CornerBracketRenderer.drawCornerBrackets(pose, consumer, box, BRACKET_THICKNESS, BRACKET_LEG_LENGTH, r, g, b, a);
+                    CornerBracketRenderer.drawMarker(pose, consumer, box, bob, r, g, b, a);
                 } else if (candidate.matchesInventoryCategory()) {
-                    alpha = ALT_TARGET_ALPHA;
+                    // Something in your inventory goes here: brackets, no marker.
+                    CornerBracketRenderer.drawCornerBrackets(pose, consumer, box, BRACKET_THICKNESS, BRACKET_LEG_LENGTH, r, g, b, INV_TARGET_ALPHA);
                 } else {
-                    alpha = BASE_OUTLINE_ALPHA;
-                }
-
-                if (candidate.matchesHeldCategory() && !candidate.isFull()) {
-                    double thickness = distanceSq <= finalNearSq
-                            ? THICK_NEAR * finalPulseScale
-                            : (distanceSq <= finalMidSq ? THICK_MID : THICK_FAR);
-                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
-                } else if (candidate.matchesInventoryCategory()) {
-                    double thickness = distanceSq <= finalNearSq
-                            ? ALT_TARGET_NEAR
-                            : (distanceSq <= finalMidSq ? ALT_TARGET_MID : ALT_TARGET_FAR);
-                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) thickness, r, g, b, alpha);
-                } else if (distanceSq <= finalNearSq) {
-                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) THIN_NEAR, r, g, b, alpha);
-                } else {
-                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box.inflate(BASE_OUTLINE_EXPAND), (float) THICK_FAR, r, g, b, alpha);
+                    // Plain tag: hollow full outline.
+                    ThickOutlineRenderer.drawThickOutline(pose, consumer, box, OUTLINE_THICKNESS, r, g, b, PLAIN_ALPHA);
                 }
                 rendered++;
             }

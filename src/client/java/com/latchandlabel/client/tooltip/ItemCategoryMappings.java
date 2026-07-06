@@ -349,11 +349,11 @@ public final class ItemCategoryMappings {
             try {
                 Item item = BuiltInRegistries.ITEM.getValue(itemId);
                 TagKey<Item> flowers = TagKey.create(BuiltInRegistries.ITEM.key(), Identifier.parse("minecraft:flowers"));
-                if (item != null && item != Items.AIR && new ItemStack(item).is(flowers)) {
+                if (item != null && item != Items.AIR && item.builtInRegistryHolder().is(flowers)) {
                     return true;
                 }
-            } catch (IllegalStateException ignored) {
-                // During very early client initialization, tags may not be bound yet.
+            } catch (RuntimeException ignored) {
+                // Components or tags not bound yet during early client init.
                 // Fall back to path heuristics and skip further tag lookups this session.
                 flowerTagChecksAvailable = false;
             }

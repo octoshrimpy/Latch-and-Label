@@ -1,5 +1,6 @@
 package com.latchandlabel.client.ui;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.model.Category;
@@ -165,7 +166,7 @@ public final class CategoryItemMappingScreen extends Screen {
             commitCategoryEdits();
         }
         if (minecraft != null) {
-            minecraft.gui.setScreen(parent);
+            McCompat.setScreen(minecraft, parent);
         }
     }
 
@@ -227,10 +228,10 @@ public final class CategoryItemMappingScreen extends Screen {
         if (!deleteConfirmOpen && hoveredItemId != null) {
             ItemStack hoveredStack = new ItemStack(BuiltInRegistries.ITEM.getValue(hoveredItemId));
             hoveredTooltipLines = new ArrayList<>();
-            hoveredTooltipLines.add(hoveredStack.getDisplayName());
+            hoveredTooltipLines.add(hoveredStack.getHoverName().copy());
 
             boolean mappedToCurrent = LatchLabelClientState.itemCategoryMappingService().isMappedToCategory(hoveredItemId, categoryId);
-            if (!mappedToCurrent && ClientInputHandler.isShiftDown()) {
+            if (!mappedToCurrent && ClientInputHandler.isAltDown()) {
                 Optional<Category> mappedCategory = LatchLabelClientState.itemCategoryMappingService()
                         .categoryIdFor(hoveredItemId)
                         .flatMap(LatchLabelClientState.categoryStore()::getById);
@@ -595,7 +596,7 @@ public final class CategoryItemMappingScreen extends Screen {
             return;
         }
 
-        minecraft.gui.setScreen(new CategoryIconPickerScreen(
+        McCompat.setScreen(minecraft, new CategoryIconPickerScreen(
                 this,
                 activeCategory().name(),
                 selectedIconItemId,
@@ -678,7 +679,7 @@ public final class CategoryItemMappingScreen extends Screen {
             minecraft.player.sendOverlayMessage(
                     Component.translatable("latchlabel.category.deleted", deletedCategoryName));
             }
-            minecraft.gui.setScreen(parent);
+            McCompat.setScreen(minecraft, parent);
         }
     }
 

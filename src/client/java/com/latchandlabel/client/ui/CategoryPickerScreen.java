@@ -1,5 +1,6 @@
 package com.latchandlabel.client.ui;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
@@ -161,7 +162,7 @@ public final class CategoryPickerScreen extends Screen {
 
             if (isWithin(mouseX, mouseY, editButtonX, buttonTop, editButtonX + EDIT_BUTTON_WIDTH, buttonBottom)) {
                 if (minecraft != null && category != null) {
-                    minecraft.gui.setScreen(new CategoryItemMappingScreen(this, category));
+                    McCompat.setScreen(minecraft, new CategoryItemMappingScreen(this, category));
                     return true;
                 }
                 if (category == null) {
@@ -341,7 +342,7 @@ public final class CategoryPickerScreen extends Screen {
 
     private void returnToParent() {
         if (minecraft != null) {
-            minecraft.gui.setScreen(parentScreen);
+            McCompat.setScreen(minecraft, parentScreen);
         }
     }
 
@@ -350,7 +351,7 @@ public final class CategoryPickerScreen extends Screen {
                 .createCategory(Component.translatable("screen.latchlabel.category_picker.new_category_name").getString(), NEW_CATEGORY_COLOR, NEW_CATEGORY_ICON);
         refilter();
         if (minecraft != null) {
-            minecraft.gui.setScreen(new CategoryItemMappingScreen(this, created));
+            McCompat.setScreen(minecraft, new CategoryItemMappingScreen(this, created));
         }
     }
 

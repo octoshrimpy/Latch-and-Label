@@ -5,6 +5,7 @@ import com.latchandlabel.client.config.ClientConfigManager;
 import com.latchandlabel.client.config.ConfigProfileManager;
 import com.latchandlabel.client.store.CategoryLifecycleService;
 import com.latchandlabel.client.store.CategoryStore;
+import com.latchandlabel.client.store.ObservedIndexStore;
 import com.latchandlabel.client.store.TagStore;
 import com.latchandlabel.client.tagging.StorageTagReconciler;
 import com.latchandlabel.client.tooltip.ItemCategoryMappingService;
@@ -20,6 +21,7 @@ public final class LatchLabelClientState {
     private static final CategoryStore CATEGORY_STORE = new CategoryStore();
     private static final TagStore TAG_STORE = new TagStore();
     private static final ItemCategoryMappingService ITEM_CATEGORY_MAPPING_SERVICE = new ItemCategoryMappingService();
+    private static final ObservedIndexStore OBSERVED_INDEX_STORE = new ObservedIndexStore(TAG_STORE::getActiveScopeId);
     private static final ClientDataManager DATA_MANAGER = new ClientDataManager(CATEGORY_STORE, TAG_STORE, ITEM_CATEGORY_MAPPING_SERVICE);
     private static final ClientConfigManager CLIENT_CONFIG_MANAGER = new ClientConfigManager();
     private static final ConfigProfileManager CONFIG_PROFILE_MANAGER = new ConfigProfileManager();
@@ -53,6 +55,10 @@ public final class LatchLabelClientState {
 
     public static ItemCategoryMappingService itemCategoryMappingService() {
         return ITEM_CATEGORY_MAPPING_SERVICE;
+    }
+
+    public static ObservedIndexStore observedIndexStore() {
+        return OBSERVED_INDEX_STORE;
     }
 
     public static ClientConfigManager clientConfigManager() {

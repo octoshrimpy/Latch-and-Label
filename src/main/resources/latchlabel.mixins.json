@@ -4,6 +4,8 @@
   "refmap": "latchlabel.refmap.json",
   "compatibilityLevel": "${mixin_compat}",
   "client": [
+    "client.AbstractContainerMenuObservedContentsMixin",
+    "client.ClientBlockEventStalenessMixin",
     "client.HandledScreenSlotBackgroundLayerMixin",
     "client.HandledScreenBookAltClickMixin"
   ],

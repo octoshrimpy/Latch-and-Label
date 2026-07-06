@@ -1,5 +1,6 @@
 package com.latchandlabel.client.dump;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.ui.ContainerTagButtonManager;
@@ -64,7 +65,7 @@ public final class DumpService {
 
         // Filter and sort by distance
         allTags.entrySet().stream()
-                .filter(entry -> entry.getKey().dimensionId().equals(client.level.dimension().identifier()))
+                .filter(entry -> entry.getKey().dimensionId().equals(McCompat.dimensionId(client.level)))
                 .filter(entry -> inventoryCategories.contains(entry.getValue()))
                 .filter(entry -> DumpSettings.queueMode() || isWithinRange(player, entry.getKey()))
                 .sorted(Comparator.comparingDouble(entry -> distanceSq(player, entry.getKey())))
@@ -93,7 +94,7 @@ public final class DumpService {
         }
 
         if (autoCloseNext) {
-            if (client.gui.screen() instanceof AbstractContainerScreen<?>) {
+            if (McCompat.getScreen(client) instanceof AbstractContainerScreen<?>) {
                 client.player.closeContainer();
             }
             autoCloseNext = false;
@@ -109,7 +110,7 @@ public final class DumpService {
         }
 
         // If a screen just opened after we interacted
-        if (awaitingScreen && client.gui.screen() instanceof AbstractContainerScreen<?> handledScreen) {
+        if (awaitingScreen && McCompat.getScreen(client) instanceof AbstractContainerScreen<?> handledScreen) {
             int moved = ContainerTagButtonManager.moveMatchingFromPlayerToStorage(
                     client, handledScreen.getMenu(), currentTarget.categoryId());
             if (moved > 0) {
@@ -121,7 +122,7 @@ public final class DumpService {
         }
 
         // Don't process while a screen is open
-        if (client.gui.screen() != null) {
+        if (McCompat.getScreen(client) != null) {
             return;
         }
 
@@ -143,7 +144,7 @@ public final class DumpService {
             while (!dumpQueue.isEmpty() && checked < queueSize) {
                 DumpTarget candidate = dumpQueue.poll();
                 checked++;
-                if (!candidate.key().dimensionId().equals(client.level.dimension().identifier())) {
+                if (!candidate.key().dimensionId().equals(McCompat.dimensionId(client.level))) {
                     continue; // discard dimension mismatches
                 }
                 if (isWithinRange(player, candidate.key())) {
@@ -162,7 +163,7 @@ public final class DumpService {
             DumpTarget next = null;
             while (!dumpQueue.isEmpty()) {
                 DumpTarget candidate = dumpQueue.poll();
-                if (!candidate.key().dimensionId().equals(client.level.dimension().identifier())) {
+                if (!candidate.key().dimensionId().equals(McCompat.dimensionId(client.level))) {
                     continue;
                 }
                 if (isWithinRange(player, candidate.key())) {

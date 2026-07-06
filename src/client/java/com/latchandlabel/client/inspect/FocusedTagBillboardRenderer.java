@@ -2,6 +2,7 @@ package com.latchandlabel.client.inspect;
 
 import com.latchandlabel.client.LatchLabel;
 import com.latchandlabel.client.LatchLabelClientState;
+import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.input.ClientInputHandler;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.ContainerTargeting;
@@ -42,7 +43,8 @@ public final class FocusedTagBillboardRenderer {
     }
 
     private static void renderHud(GuiGraphicsExtractor context) {
-        if (!ClientInputHandler.isInspectModeActive()) {
+        boolean labelsOnLook = InspectSettings.labelsOnLook() && InspectSettings.bordersAlwaysVisible();
+        if (!ClientInputHandler.isInspectModeActive() && !labelsOnLook) {
             return;
         }
 

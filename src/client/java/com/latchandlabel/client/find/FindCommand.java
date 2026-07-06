@@ -57,6 +57,11 @@ public final class FindCommand {
 
         Item mainhandItem = client.player.getMainHandItem().getItem();
         if (mainhandItem == Items.AIR) {
+            // Empty hand toggles the current results off; otherwise nothing to search for.
+            if (FindResultState.hasActiveResults()) {
+                FindResultState.clear();
+                return 1;
+            }
             client.player.sendOverlayMessage(Component.translatable("latchlabel.find.error_mainhand_empty"));
             return 0;
         }
@@ -132,20 +137,22 @@ public final class FindCommand {
         Identifier targetId = BuiltInRegistries.ITEM.getKey(targetItem);
         List<FindScanService.FindMatch> results = FIND_SCAN_SERVICE.scan(client, targetItem, matchResult.matchSet(), radius);
         FindResultState.publish(results);
-        FindResultState.highlightItems(targetItem, matchResult.matchSet(), FindResultState.getHighlightDurationMs());
+        FindResultState.highlightItems(targetItem, matchResult.matchSet());
+        FindResultState.setQueryLabel(new net.minecraft.world.item.ItemStack(targetItem).getHoverName());
+        FindResultState.setQueryCategory(LatchLabelClientState.itemCategoryMappingService()
+                .categoryIdFor(targetId).orElse(null));
         if (!results.isEmpty()) {
             java.util.LinkedHashSet<com.latchandlabel.client.model.ChestKey> allMatchKeys = new java.util.LinkedHashSet<>();
             for (FindScanService.FindMatch result : results) {
-                if (result.matchType() == FindScanService.MatchType.EXACT
-                        || result.matchType() == FindScanService.MatchType.VARIANT) {
+                // Known locations (fresh or stale) are worth focusing the nav cursor on; skip pure guesses.
+                if (result.matchType() != FindScanService.MatchType.LIKELY) {
                     allMatchKeys.add(result.chestKey());
                 }
             }
             if (!allMatchKeys.isEmpty()) {
-                FindResultState.focusAll(allMatchKeys, FindResultState.getHighlightDurationMs());
+                FindResultState.focusAll(allMatchKeys);
             }
         }
-        NearbyChestScanner.scheduleNearby(client, radius, targetItem, matchResult.matchSet());
         if (client.player != null) {
             client.player.sendOverlayMessage(Component.translatable("latchlabel.find.feedback_results_count", results.size()));
         }
@@ -176,18 +183,21 @@ public final class FindCommand {
 
         List<FindScanService.FindMatch> results = FIND_SCAN_SERVICE.scanByTag(client, categoryId, radius);
         FindResultState.publish(results);
-        FindResultState.highlightCategory(categoryId, FindResultState.getHighlightDurationMs());
+        FindResultState.highlightCategory(categoryId);
+        String categoryLabel = LatchLabelClientState.categoryStore().getById(categoryId)
+                .map(Category::name).orElse("#" + categoryId);
+        FindResultState.setQueryLabel(Component.literal(categoryLabel));
+        FindResultState.setQueryCategory(categoryId);
         if (!results.isEmpty()) {
             java.util.LinkedHashSet<com.latchandlabel.client.model.ChestKey> allMatchKeys = new java.util.LinkedHashSet<>();
             for (FindScanService.FindMatch result : results) {
                 allMatchKeys.add(result.chestKey());
             }
-            FindResultState.focusAll(allMatchKeys, FindResultState.getHighlightDurationMs());
+            FindResultState.focusAll(allMatchKeys);
         }
         if (client.player != null) {
             client.player.sendOverlayMessage(Component.translatable("latchlabel.find.feedback_results_count", results.size()));
         }
-        NearbyChestScanner.scheduleNearbyByCategory(client, radius, categoryId);
         return results.size();
     }
 

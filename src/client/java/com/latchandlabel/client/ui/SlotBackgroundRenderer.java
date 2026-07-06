@@ -28,7 +28,7 @@ public final class SlotBackgroundRenderer {
             return;
         }
 
-        boolean inspectDown = ClientInputHandler.isShiftDown() || ClientInputHandler.isAltDown();
+        boolean inspectDown = ClientInputHandler.isAltDown();
         Optional<Category> activeCategoryOpt = inspectDown
                 ? Optional.empty()
                 : ContainerTagButtonManager.activeCategoryFor(handledScreen);

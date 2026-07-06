@@ -7,7 +7,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.latchandlabel.client.dump.DumpSettings;
 import com.latchandlabel.client.input.ClientInputHandler;
-import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import com.latchandlabel.client.LatchLabel;
 import net.fabricmc.loader.api.FabricLoader;
@@ -73,14 +72,15 @@ public final class ClientConfigManager {
         }
 
         InspectSettings.setInspectRange(asInt(root.get("inspectRange"), 8));
-        InspectSettings.setActivationMode(InspectActivationMode.fromConfigValue(asString(root.get("inspectActivationMode"), "alt_or_shift")));
+        InspectSettings.setBordersAlwaysVisible(asBoolean(root.get("bordersAlwaysVisible"), false));
+        InspectSettings.setLabelsOnLook(asBoolean(root.get("labelsOnLook"), false));
         FindSettings.setDefaultFindRadius(asInt(root.get("defaultFindRadius"), 24));
-        FindResultState.setHighlightDurationSeconds(asInt(root.get("highlightDurationSeconds"), 10));
         FindSettings.setVariantMatchingEnabled(asBoolean(root.get("variantMatchingEnabled"), true));
         FindSettings.setAllowSlashFCommand(asBoolean(root.get("allowSlashFCommand"), true));
         FindSettings.setAllowFindKeybind(asBoolean(root.get("allowFindKeybind"), true));
-        FindSettings.setAutoRefreshContents(asBoolean(root.get("autoRefreshContents"), false));
+        FindSettings.setFindHighlightTimeoutSeconds(asInt(root.get("findHighlightTimeoutSeconds"), 60));
         TransferSettings.setMoveSourceMode(MoveSourceMode.fromConfigValue(asString(root.get("moveSourceMode"), "inventory")));
+        TransferSettings.setPullDropsOnGround(asBoolean(root.get("pullDropsOnGround"), false));
         ContainerDetectionSettings.setDetectedCategoryThresholdPercent(asInt(
                 root.get("detectedCategoryThresholdPercent"),
                 ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent()
@@ -90,6 +90,7 @@ public final class ClientConfigManager {
         KeybindSettings.setOpenPickerKeyCode(asInt(root.get("openPickerKeyCode"), 66));
         KeybindSettings.setFindShortcutKeyCode(asInt(root.get("findShortcutKeyCode"), -1));
         KeybindSettings.setMoveToStorageKeyCode(asInt(root.get("moveToStorageKeyCode"), -1));
+        KeybindSettings.setFindCycleKeyCode(asInt(root.get("findCycleKeyCode"), -1));
         MultiplayerWorldProfileSettings.replaceProfilesByServerScope(parseProfiles(root.get("multiplayerWorldProfiles")));
         ClientInputHandler.reloadFromSettings();
 
@@ -101,12 +102,6 @@ public final class ClientConfigManager {
     }
 
     public void flushNow() {
-        writeCurrentSettings();
-    }
-
-    public void setHighlightDurationSeconds(int seconds) {
-        int normalized = Math.max(1, seconds);
-        FindResultState.setHighlightDurationSeconds(normalized);
         writeCurrentSettings();
     }
 
@@ -123,20 +118,22 @@ public final class ClientConfigManager {
 
     private void writeDefaults() {
         InspectSettings.setInspectRange(8);
-        InspectSettings.setActivationMode(InspectActivationMode.ALT_OR_SHIFT);
+        InspectSettings.setBordersAlwaysVisible(false);
+        InspectSettings.setLabelsOnLook(false);
         FindSettings.setDefaultFindRadius(24);
-        FindResultState.setHighlightDurationSeconds(10);
         FindSettings.setVariantMatchingEnabled(true);
         FindSettings.setAllowSlashFCommand(true);
         FindSettings.setAllowFindKeybind(true);
-        FindSettings.setAutoRefreshContents(false);
+        FindSettings.setFindHighlightTimeoutSeconds(60);
         TransferSettings.setMoveSourceMode(MoveSourceMode.INVENTORY);
+        TransferSettings.setPullDropsOnGround(false);
         ContainerDetectionSettings.setDetectedCategoryThresholdPercent(ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent());
         DumpSettings.setQueueMode(false);
         DumpSettings.setDumpRange(16);
         KeybindSettings.setOpenPickerKeyCode(66);
         KeybindSettings.setFindShortcutKeyCode(-1);
         KeybindSettings.setMoveToStorageKeyCode(-1);
+        KeybindSettings.setFindCycleKeyCode(-1);
         MultiplayerWorldProfileSettings.replaceProfilesByServerScope(Map.of());
         ClientInputHandler.reloadFromSettings();
         writeCurrentSettings();
@@ -148,20 +145,22 @@ public final class ClientConfigManager {
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
         root.addProperty("inspectRange", InspectSettings.inspectRange());
-        root.addProperty("inspectActivationMode", InspectSettings.activationMode().toConfigValue());
+        root.addProperty("bordersAlwaysVisible", InspectSettings.bordersAlwaysVisible());
+        root.addProperty("labelsOnLook", InspectSettings.labelsOnLook());
         root.addProperty("defaultFindRadius", FindSettings.defaultFindRadius());
-        root.addProperty("highlightDurationSeconds", FindResultState.getHighlightDurationSeconds());
         root.addProperty("variantMatchingEnabled", FindSettings.variantMatchingEnabled());
         root.addProperty("allowSlashFCommand", FindSettings.allowSlashFCommand());
         root.addProperty("allowFindKeybind", FindSettings.allowFindKeybind());
-        root.addProperty("autoRefreshContents", FindSettings.autoRefreshContents());
+        root.addProperty("findHighlightTimeoutSeconds", FindSettings.findHighlightTimeoutSeconds());
         root.addProperty("moveSourceMode", TransferSettings.moveSourceMode().toConfigValue());
+        root.addProperty("pullDropsOnGround", TransferSettings.pullDropsOnGround());
         root.addProperty("detectedCategoryThresholdPercent", ContainerDetectionSettings.detectedCategoryThresholdPercent());
         root.addProperty("dumpQueueMode", DumpSettings.queueMode());
         root.addProperty("dumpRange", DumpSettings.dumpRange());
         root.addProperty("openPickerKeyCode", KeybindSettings.openPickerKeyCode());
         root.addProperty("findShortcutKeyCode", KeybindSettings.findShortcutKeyCode());
         root.addProperty("moveToStorageKeyCode", KeybindSettings.moveToStorageKeyCode());
+        root.addProperty("findCycleKeyCode", KeybindSettings.findCycleKeyCode());
         JsonObject multiplayerWorldProfiles = new JsonObject();
         for (Map.Entry<String, String> entry : MultiplayerWorldProfileSettings.snapshotProfilesByServerScope().entrySet()) {
             multiplayerWorldProfiles.addProperty(entry.getKey(), entry.getValue());

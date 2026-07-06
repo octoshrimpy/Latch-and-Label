@@ -1,14 +1,13 @@
 package com.latchandlabel.client.config.ui;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.book.BookExportImportService;
 import com.latchandlabel.client.config.ContainerDetectionSettings;
-import com.latchandlabel.client.config.InspectActivationMode;
 import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
 import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.dump.DumpSettings;
-import com.latchandlabel.client.find.FindResultState;
 import com.latchandlabel.client.find.FindSettings;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -24,8 +23,8 @@ public final class LatchLabelConfigScreen extends Screen {
     private static final int MAX_FIND_RADIUS = 256;
     private static final int MIN_DUMP_RANGE = 1;
     private static final int MAX_DUMP_RANGE = 128;
-    private static final int MIN_HIGHLIGHT_SECONDS = 1;
-    private static final int MAX_HIGHLIGHT_SECONDS = 120;
+    private static final int MIN_FIND_TIMEOUT = 0;
+    private static final int MAX_FIND_TIMEOUT = 600;
     private static final int MIN_DETECTION_THRESHOLD_PERCENT = 1;
     private static final int MAX_DETECTION_THRESHOLD_PERCENT = 100;
 
@@ -41,12 +40,13 @@ public final class LatchLabelConfigScreen extends Screen {
     private int rowHeight;
     private int controlWidth;
 
-    private Button inspectModeButton;
+    private Button bordersAlwaysButton;
+    private Button labelsOnLookButton;
     private Button variantMatchingButton;
     private Button slashFButton;
     private Button findKeybindButton;
     private Button moveSourceButton;
-    private Button autoRefreshButton;
+    private Button pullDestButton;
 
     public LatchLabelConfigScreen(Screen parent) {
         super(Component.translatable("screen.latchlabel.config.title"));
@@ -56,7 +56,7 @@ public final class LatchLabelConfigScreen extends Screen {
     @Override
     protected void init() {
         panelWidth = Math.max(120, Math.min(520, width - 30));
-        panelHeight = 406;
+        panelHeight = 428;
         panelLeft = (width - panelWidth) / 2;
         panelTop = (height - panelHeight) / 2;
         labelX = panelLeft + 16;
@@ -67,9 +67,10 @@ public final class LatchLabelConfigScreen extends Screen {
 
         addReloadButtons();
         addInspectRangeControls();
-        addInspectModeControl();
+        addBordersAlwaysControl();
+        addLabelsOnLookControl();
         addFindRadiusControls();
-        addHighlightDurationControls();
+        addFindTimeoutControls();
         addDumpRangeControls();
         addToggleControls();
         addDetectionThresholdControls();
@@ -83,7 +84,7 @@ public final class LatchLabelConfigScreen extends Screen {
     @Override
     public void onClose() {
         if (minecraft != null) {
-            minecraft.gui.setScreen(parent);
+            McCompat.setScreen(minecraft, parent);
         }
     }
 
@@ -107,11 +108,13 @@ public final class LatchLabelConfigScreen extends Screen {
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.inspect_range_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.text(font, Component.translatable("screen.latchlabel.config.inspect_mode_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.borders_always_label"), labelX, y, 0xFFE8E8E8, true);
+        y += rowHeight;
+        context.text(font, Component.translatable("screen.latchlabel.config.labels_on_look_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.find_radius_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.text(font, Component.translatable("screen.latchlabel.config.highlight_duration_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.find_timeout_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.dump_range_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
@@ -123,7 +126,7 @@ public final class LatchLabelConfigScreen extends Screen {
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
-        context.text(font, Component.translatable("screen.latchlabel.config.auto_refresh_label"), labelX, y, 0xFFE8E8E8, true);
+        context.text(font, Component.translatable("screen.latchlabel.config.pull_dest_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.detected_category_threshold_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
@@ -164,9 +167,20 @@ public final class LatchLabelConfigScreen extends Screen {
         rowY += rowHeight;
     }
 
-    private void addInspectModeControl() {
-        inspectModeButton = addRenderableWidget(Button.builder(inspectModeText(), button -> {
-                    InspectSettings.setActivationMode(nextInspectMode(InspectSettings.activationMode()));
+    private void addLabelsOnLookControl() {
+        labelsOnLookButton = addRenderableWidget(Button.builder(toggleText(InspectSettings.labelsOnLook()), button -> {
+                    InspectSettings.setLabelsOnLook(!InspectSettings.labelsOnLook());
+                    saveConfig();
+                    refreshButtonLabels();
+                })
+                .pos(controlX, rowY).size(controlWidth, 20)
+                .build());
+        rowY += rowHeight;
+    }
+
+    private void addBordersAlwaysControl() {
+        bordersAlwaysButton = addRenderableWidget(Button.builder(toggleText(InspectSettings.bordersAlwaysVisible()), button -> {
+                    InspectSettings.setBordersAlwaysVisible(!InspectSettings.bordersAlwaysVisible());
                     saveConfig();
                     refreshButtonLabels();
                 })
@@ -191,17 +205,17 @@ public final class LatchLabelConfigScreen extends Screen {
         rowY += rowHeight;
     }
 
-    private void addHighlightDurationControls() {
+    private void addFindTimeoutControls() {
         addStepControl(
                 rowY,
-                FindResultState.getHighlightDurationSeconds(),
+                FindSettings.findHighlightTimeoutSeconds(),
                 delta -> {
-                    int next = clamp(FindResultState.getHighlightDurationSeconds() + delta, MIN_HIGHLIGHT_SECONDS, MAX_HIGHLIGHT_SECONDS);
-                    if (next != FindResultState.getHighlightDurationSeconds()) {
-                        FindResultState.setHighlightDurationSeconds(next);
+                    int next = clamp(FindSettings.findHighlightTimeoutSeconds() + delta, MIN_FIND_TIMEOUT, MAX_FIND_TIMEOUT);
+                    if (next != FindSettings.findHighlightTimeoutSeconds()) {
+                        FindSettings.setFindHighlightTimeoutSeconds(next);
                         saveConfig();
                     }
-                    return FindResultState.getHighlightDurationSeconds();
+                    return FindSettings.findHighlightTimeoutSeconds();
                 }
         );
         rowY += rowHeight;
@@ -260,8 +274,8 @@ public final class LatchLabelConfigScreen extends Screen {
                 .build());
         rowY += rowHeight;
 
-        autoRefreshButton = addRenderableWidget(Button.builder(toggleText(FindSettings.autoRefreshContents()), button -> {
-                    FindSettings.setAutoRefreshContents(!FindSettings.autoRefreshContents());
+        pullDestButton = addRenderableWidget(Button.builder(pullDestText(), button -> {
+                    TransferSettings.setPullDropsOnGround(!TransferSettings.pullDropsOnGround());
                     saveConfig();
                     refreshButtonLabels();
                 })
@@ -352,8 +366,11 @@ public final class LatchLabelConfigScreen extends Screen {
     }
 
     private void refreshButtonLabels() {
-        if (inspectModeButton != null) {
-            inspectModeButton.setMessage(inspectModeText());
+        if (bordersAlwaysButton != null) {
+            bordersAlwaysButton.setMessage(toggleText(InspectSettings.bordersAlwaysVisible()));
+        }
+        if (labelsOnLookButton != null) {
+            labelsOnLookButton.setMessage(toggleText(InspectSettings.labelsOnLook()));
         }
         if (variantMatchingButton != null) {
             variantMatchingButton.setMessage(toggleText(FindSettings.variantMatchingEnabled()));
@@ -367,8 +384,8 @@ public final class LatchLabelConfigScreen extends Screen {
         if (moveSourceButton != null) {
             moveSourceButton.setMessage(moveSourceText());
         }
-        if (autoRefreshButton != null) {
-            autoRefreshButton.setMessage(toggleText(FindSettings.autoRefreshContents()));
+        if (pullDestButton != null) {
+            pullDestButton.setMessage(pullDestText());
         }
     }
 
@@ -376,22 +393,6 @@ public final class LatchLabelConfigScreen extends Screen {
         return switch (current) {
             case INVENTORY -> MoveSourceMode.INVENTORY_AND_HOTBAR;
             case INVENTORY_AND_HOTBAR -> MoveSourceMode.INVENTORY;
-        };
-    }
-
-    private static InspectActivationMode nextInspectMode(InspectActivationMode current) {
-        return switch (current) {
-            case ALT_ONLY -> InspectActivationMode.SHIFT_ONLY;
-            case SHIFT_ONLY -> InspectActivationMode.ALT_OR_SHIFT;
-            case ALT_OR_SHIFT -> InspectActivationMode.ALT_ONLY;
-        };
-    }
-
-    private static Component inspectModeText() {
-        return switch (InspectSettings.activationMode()) {
-            case ALT_ONLY -> Component.translatable("screen.latchlabel.config.inspect_mode.alt_only");
-            case SHIFT_ONLY -> Component.translatable("screen.latchlabel.config.inspect_mode.shift_only");
-            case ALT_OR_SHIFT -> Component.translatable("screen.latchlabel.config.inspect_mode.both");
         };
     }
 
@@ -404,6 +405,12 @@ public final class LatchLabelConfigScreen extends Screen {
             case INVENTORY -> Component.translatable("screen.latchlabel.config.move_source.inventory");
             case INVENTORY_AND_HOTBAR -> Component.translatable("screen.latchlabel.config.move_source.inventory_hotbar");
         };
+    }
+
+    private static Component pullDestText() {
+        return Component.translatable(TransferSettings.pullDropsOnGround()
+                ? "screen.latchlabel.config.pull_dest.ground"
+                : "screen.latchlabel.config.pull_dest.inventory");
     }
 
     private static int clamp(int value, int min, int max) {

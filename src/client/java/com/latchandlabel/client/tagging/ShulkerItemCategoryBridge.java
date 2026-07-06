@@ -22,6 +22,7 @@ import net.minecraft.world.level.Level;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +32,8 @@ import java.util.Optional;
  * Maintains a client-side bridge between placed shulker box tags and shulker item stacks.
  * When a tagged shulker is broken, the bridge fingerprints its contents and remembers
  * the category so that when the item is picked up, the tag can be preserved.
+ * Empty unnamed shulkers are intentionally excluded because they are not
+ * distinguishable from every other identical empty shulker item stack.
  */
 public final class ShulkerItemCategoryBridge {
     private static final long PENDING_BREAK_TTL_MS = 3_000L;
@@ -274,17 +277,25 @@ public final class ShulkerItemCategoryBridge {
             return null;
         }
 
-        StringBuilder fingerprint = new StringBuilder(itemId.toString());
+        boolean hasCustomName = stack.get(DataComponents.CUSTOM_NAME) != null;
         ItemContainerContents container = stack.get(DataComponents.CONTAINER);
+        List<String> contents = List.of();
         if (container != null) {
-            String joined = container.nonEmptyItemCopyStream()
+            contents = container.nonEmptyItemCopyStream()
                     .map(ShulkerItemCategoryBridge::fingerprintContainedStack)
                     .sorted()
-                    .reduce((left, right) -> left + "," + right)
-                    .orElse("");
+                    .toList();
+        }
+        if (contents.isEmpty() && !hasCustomName) {
+            return null;
+        }
+
+        StringBuilder fingerprint = new StringBuilder(itemId.toString());
+        if (!contents.isEmpty()) {
+            String joined = String.join(",", contents);
             fingerprint.append("|c=").append(joined);
         }
-        if (stack.get(DataComponents.CUSTOM_NAME) != null) {
+        if (hasCustomName) {
             fingerprint.append("|n=").append(stack.get(DataComponents.CUSTOM_NAME).getString());
         }
         return fingerprint.toString();

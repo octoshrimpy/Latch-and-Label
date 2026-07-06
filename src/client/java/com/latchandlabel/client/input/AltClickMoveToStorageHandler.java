@@ -1,9 +1,12 @@
 package com.latchandlabel.client.input;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.config.TransferSettings;
+import com.latchandlabel.client.find.ContainerObserver;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.model.Category;
+import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.TrackableStorage;
@@ -18,12 +21,13 @@ import net.minecraft.client.player.LocalPlayer;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
+import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
@@ -80,7 +84,7 @@ public final class AltClickMoveToStorageHandler {
                     : AutoMoveOperation.PUSH_MATCHING_TO_STORAGE;
             sendActionBar(client, Component.translatable(operation.startingTranslationKey()));
             BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(pos), direction, pos, false);
-            pendingAutoMove = new PendingAutoMove(resolved.get(), operation, AUTO_MOVE_TIMEOUT_TICKS);
+            pendingAutoMove = new PendingAutoMove(resolved.get(), operation, AUTO_MOVE_TIMEOUT_TICKS, System.currentTimeMillis());
             try {
                 openStorageForAutoMove(client, hitResult, pullNonMatching);
             } catch (RuntimeException e) {
@@ -100,6 +104,10 @@ public final class AltClickMoveToStorageHandler {
                 return InteractionResult.PASS;
             }
             if (pendingAutoMove != null) {
+                return InteractionResult.PASS;
+            }
+            // Brush + alt is the chest-group sort gesture — let that handler take it.
+            if (client.player.getMainHandItem().is(Items.BRUSH)) {
                 return InteractionResult.PASS;
             }
 
@@ -139,6 +147,7 @@ public final class AltClickMoveToStorageHandler {
             return;
         }
 
+        // Shift+alt-punch is a sneak-attack; temporarily unsneak so the container opens instead of nothing.
         LocalPlayer player = client.player;
         Input originalInput = player.getLastSentInput();
         Input unsneakingInput = withSneak(originalInput, false);
@@ -168,6 +177,13 @@ public final class AltClickMoveToStorageHandler {
         );
     }
 
+    private static boolean isShiftDown(Window window) {
+        return window != null && (
+                InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT)
+                        || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)
+        );
+    }
+
     private static void onEndTick(Minecraft client) {
         if (client == null || client.getWindow() == null || !isAltDown(client.getWindow())) {
             copiedCategoryId = Optional.empty();
@@ -188,7 +204,10 @@ public final class AltClickMoveToStorageHandler {
             return;
         }
 
-        if (client.gui.screen() instanceof AbstractContainerScreen<?>) {
+        // Wait for the freshly-opened menu to be synced from the server before clicking;
+        // MC 26.x rejects container clicks carrying a stale stateId, which desyncs the move.
+        boolean menuSynced = ContainerObserver.lastContentsSyncMs() > current.createdAtMs();
+        if (menuSynced && McCompat.getScreen(client) instanceof AbstractContainerScreen<?>) {
             boolean hadMatchingStacks = current.operation() == AutoMoveOperation.PUSH_MATCHING_TO_STORAGE
                     && ContainerTagButtonManager.hasMatchingPlayerStacksForCurrentScreen(client, current.target());
             int movedStacks = switch (current.operation()) {
@@ -215,13 +234,6 @@ public final class AltClickMoveToStorageHandler {
         );
     }
 
-    private static boolean isShiftDown(Window window) {
-        return window != null && (
-                InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT)
-                        || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT)
-        );
-    }
-
     private static String categoryName(String categoryId) {
         Optional<Category> category = LatchLabelClientState.categoryStore().getById(categoryId);
         if (category.isPresent()) {
@@ -242,8 +254,7 @@ public final class AltClickMoveToStorageHandler {
             if (stack.isEmpty()) {
                 continue;
             }
-            boolean matches = LatchLabelClientState.itemCategoryMappingService()
-                    .categoryIdFor(stack)
+            boolean matches = resolveCategoryIdForStack(stack)
                     .map(categoryId::equals)
                     .orElse(false);
             if (matches) {
@@ -251,6 +262,11 @@ public final class AltClickMoveToStorageHandler {
             }
         }
         return false;
+    }
+
+    private static Optional<String> resolveCategoryIdForStack(ItemStack stack) {
+        return ShulkerItemCategoryBridge.resolveCategoryIdForStack(stack)
+                .or(() -> LatchLabelClientState.itemCategoryMappingService().categoryIdFor(stack));
     }
 
     private static void sendActionBar(Minecraft client, Component text) {
@@ -308,10 +324,11 @@ public final class AltClickMoveToStorageHandler {
     private record PendingAutoMove(
             ChestKey target,
             AutoMoveOperation operation,
-            int remainingTicks
+            int remainingTicks,
+            long createdAtMs
     ) {
         private PendingAutoMove withRemainingTicks(int ticks) {
-            return new PendingAutoMove(target, operation, ticks);
+            return new PendingAutoMove(target, operation, ticks, createdAtMs);
         }
     }
 

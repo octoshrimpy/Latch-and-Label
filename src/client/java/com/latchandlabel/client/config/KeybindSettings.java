@@ -7,6 +7,7 @@ public final class KeybindSettings {
     private static int openPickerKeyCode = GLFW.GLFW_KEY_B;
     private static int findShortcutKeyCode = GLFW.GLFW_KEY_UNKNOWN;
     private static int moveToStorageKeyCode = GLFW.GLFW_KEY_UNKNOWN;
+    private static int findCycleKeyCode = GLFW.GLFW_KEY_UNKNOWN;
 
     private KeybindSettings() {
     }
@@ -33,5 +34,13 @@ public final class KeybindSettings {
 
     public static void setMoveToStorageKeyCode(int keyCode) {
         moveToStorageKeyCode = keyCode;
+    }
+
+    public static int findCycleKeyCode() {
+        return findCycleKeyCode;
+    }
+
+    public static void setFindCycleKeyCode(int keyCode) {
+        findCycleKeyCode = keyCode;
     }
 }

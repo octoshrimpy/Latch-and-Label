@@ -1,9 +1,11 @@
 package com.latchandlabel.client.ui;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.LatchLabelClientState;
 import com.latchandlabel.client.config.ContainerDetectionSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
 import com.latchandlabel.client.config.TransferSettings;
+import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.tagging.ContainerScreenContextResolver;
 import com.latchandlabel.client.tagging.TaggingController;
@@ -20,7 +22,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -179,11 +181,11 @@ public final class ContainerTagButtonManager {
     }
 
     public static int moveMatchingFromPlayerToStorageForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
-        if (client == null || client.gui.screen() == null) {
+        if (client == null || McCompat.getScreen(client) == null) {
             return -1;
         }
 
-        Screen screen = client.gui.screen();
+        Screen screen = McCompat.getScreen(client);
         ButtonRegistration registration = BUTTONS.get(screen);
         if (registration == null) {
             return -1;
@@ -206,11 +208,11 @@ public final class ContainerTagButtonManager {
     }
 
     public static boolean hasMatchingPlayerStacksForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
-        if (client == null || client.gui.screen() == null) {
+        if (client == null || McCompat.getScreen(client) == null) {
             return false;
         }
 
-        Screen screen = client.gui.screen();
+        Screen screen = McCompat.getScreen(client);
         ButtonRegistration registration = BUTTONS.get(screen);
         if (registration == null) {
             return false;
@@ -231,11 +233,11 @@ public final class ContainerTagButtonManager {
     }
 
     public static int moveNonMatchingFromStorageToPlayerForCurrentScreen(Minecraft client, ChestKey expectedTarget) {
-        if (client == null || client.gui.screen() == null) {
+        if (client == null || McCompat.getScreen(client) == null) {
             return -1;
         }
 
-        Screen screen = client.gui.screen();
+        Screen screen = McCompat.getScreen(client);
         ButtonRegistration registration = BUTTONS.get(screen);
         if (registration == null) {
             return -1;
@@ -347,7 +349,7 @@ public final class ContainerTagButtonManager {
         int totalItems = 0;
 
         for (Slot slot : handler.slots) {
-            if (slot.container instanceof Container) {
+            if (slot.container instanceof Inventory) {
                 continue;
             }
 
@@ -358,8 +360,7 @@ public final class ContainerTagButtonManager {
 
             int count = stack.getCount();
             totalItems += count;
-            LatchLabelClientState.itemCategoryMappingService()
-                    .categoryIdFor(stack)
+            resolveCategoryIdForStack(stack)
                     .filter(categoryId -> LatchLabelClientState.categoryStore().getById(categoryId).isPresent())
                     .ifPresent(categoryId -> countsByCategory.merge(categoryId, count, Integer::sum));
         }
@@ -436,10 +437,11 @@ public final class ContainerTagButtonManager {
         }
 
         boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
+        boolean dropOnGround = TransferSettings.pullDropsOnGround();
         int movedStacks = 0;
 
         for (Slot slot : handler.slots) {
-            if (slot.container instanceof Container) {
+            if (slot.container instanceof Inventory) {
                 continue;
             }
 
@@ -448,7 +450,10 @@ public final class ContainerTagButtonManager {
                 continue;
             }
 
-            if (moveStorageStackToPlayer(client, handler, slot, includeHotbar)) {
+            boolean moved = dropOnGround
+                    ? throwStorageStack(client, handler, slot)
+                    : moveStorageStackToPlayer(client, handler, slot, includeHotbar);
+            if (moved) {
                 movedStacks++;
             }
         }
@@ -456,14 +461,24 @@ public final class ContainerTagButtonManager {
         return movedStacks;
     }
 
+    private static boolean throwStorageStack(Minecraft client, AbstractContainerMenu handler, Slot slot) {
+        if (!slot.hasItem()) {
+            return false;
+        }
+        ItemStack before = slot.getItem().copy();
+        // button 1 = drop the whole stack from the slot to the ground.
+        client.gameMode.handleContainerInput(handler.containerId, slot.index, 1, ContainerInput.THROW, client.player);
+        return !ItemStack.matches(before, slot.getItem());
+    }
+
     public static boolean hasMatchingPlayerStacks(AbstractContainerMenu handler, String categoryId) {
         boolean includeHotbar = TransferSettings.moveSourceMode().includesHotbar();
 
         for (Slot slot : handler.slots) {
-            if (!(slot.container instanceof Container)) {
+            if (!(slot.container instanceof Inventory)) {
                 continue;
             }
-            if (!includeHotbar && slot.index < 9) {
+            if (!includeHotbar && slot.getContainerSlot() < 9) {
                 continue;
             }
 
@@ -485,10 +500,10 @@ public final class ContainerTagButtonManager {
         int movedStacks = 0;
 
         for (Slot slot : handler.slots) {
-            if (!(slot.container instanceof Container)) {
+            if (!(slot.container instanceof Inventory)) {
                 continue;
             }
-            if (!includeHotbar && slot.index < 9) {
+            if (!includeHotbar && slot.getContainerSlot() < 9) {
                 continue;
             }
 
@@ -524,10 +539,10 @@ public final class ContainerTagButtonManager {
         int movedStacks = 0;
 
         for (Slot slot : handler.slots) {
-            if (!(slot.container instanceof Container)) {
+            if (!(slot.container instanceof Inventory)) {
                 continue;
             }
-            if (!includeHotbar && slot.index < 9) {
+            if (!includeHotbar && slot.getContainerSlot() < 9) {
                 continue;
             }
 
@@ -663,10 +678,10 @@ public final class ContainerTagButtonManager {
     }
 
     private static boolean isAllowedPlayerDestination(Slot slot, boolean includeHotbar) {
-        if (!(slot.container instanceof Container)) {
+        if (!(slot.container instanceof Inventory)) {
             return false;
         }
-        return includeHotbar || slot.index >= 9;
+        return includeHotbar || slot.getContainerSlot() >= 9;
     }
 
     private static int maxInsertCount(Slot slot, ItemStack stack) {
@@ -678,10 +693,14 @@ public final class ContainerTagButtonManager {
     }
 
     private static boolean isInCategory(ItemStack stack, String categoryId) {
-        return LatchLabelClientState.itemCategoryMappingService()
-                .categoryIdFor(stack)
+        return resolveCategoryIdForStack(stack)
                 .map(categoryId::equals)
                 .orElse(false);
+    }
+
+    private static Optional<String> resolveCategoryIdForStack(ItemStack stack) {
+        return ShulkerItemCategoryBridge.resolveCategoryIdForStack(stack)
+                .or(() -> LatchLabelClientState.itemCategoryMappingService().categoryIdFor(stack));
     }
 
     private static void showMoveOverlay(Minecraft client, String key, int movedStacks) {

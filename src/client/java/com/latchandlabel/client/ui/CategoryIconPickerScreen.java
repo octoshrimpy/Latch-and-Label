@@ -1,5 +1,6 @@
 package com.latchandlabel.client.ui;
 
+import com.latchandlabel.client.McCompat;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 // TODO: verify MouseButtonEvent package after ./gradlew genSources — was net.minecraft.client.gui.MouseButtonEvent in 1.21.11
@@ -182,7 +183,7 @@ public final class CategoryIconPickerScreen extends Screen {
     @Override
     public void onClose() {
         if (minecraft != null) {
-            minecraft.gui.setScreen(parent);
+            McCompat.setScreen(minecraft, parent);
         }
     }
 

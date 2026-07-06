@@ -48,14 +48,12 @@ loom {
 sourceSets {
     client {
         java.srcDirs = [
-            rootProject.file('src/client/java'),
-            project.file('src/client/java'),
-            project.file('build/generated/stonecutter/client/java')
+            project.file('src/client/java'),           // version-specific overrides first
+            rootProject.file('src/client/java')        // shared sources
         ]
         resources.srcDirs = [
-            rootProject.file('src/client/resources'),
             project.file('src/client/resources'),
-            project.file('build/generated/stonecutter/client/resources')
+            rootProject.file('src/client/resources')
         ]
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath

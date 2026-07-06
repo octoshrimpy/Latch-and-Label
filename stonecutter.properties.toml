@@ -2,7 +2,7 @@
 mod.id = "latchlabel"
 mod.name = "Latch & Label"
 mod.group = "com.latchandlabel"
-mod.version = "0.1.1"
+mod.version = "0.1.2"
 
 deps.fabric_loader = "0.19.2"
 loomx.loom_version = "1.17.0-alpha.8"

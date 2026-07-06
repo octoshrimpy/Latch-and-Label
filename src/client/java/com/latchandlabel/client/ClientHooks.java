@@ -1,5 +1,7 @@
 package com.latchandlabel.client;
 
+import com.latchandlabel.client.book.BookExportInteractionHandler;
+import com.latchandlabel.client.book.BookScreenPrompt;
 import com.latchandlabel.client.data.TagScopeResolver;
 import com.latchandlabel.client.input.AltClickMoveToStorageHandler;
 import com.latchandlabel.client.input.ClientInputHandler;
@@ -10,9 +12,10 @@ import com.latchandlabel.client.dump.DumpCommand;
 import com.latchandlabel.client.dump.DumpService;
 import com.latchandlabel.client.find.FindCommand;
 import com.latchandlabel.client.find.FindHighlightRenderer;
-import com.latchandlabel.client.find.FindScanService;
-import com.latchandlabel.client.find.NearbyChestScanner;
+import com.latchandlabel.client.find.FindResultState;
+import com.latchandlabel.client.find.FindResultsHudRenderer;
 import com.latchandlabel.client.inspect.FocusedTagBillboardRenderer;
+import com.latchandlabel.client.sort.ChestGroupSortService;
 import com.latchandlabel.client.inspect.InspectModeRenderer;
 import com.latchandlabel.client.config.ConfigCommand;
 import com.latchandlabel.client.tooltip.ItemCategoryTooltipHandler;
@@ -36,25 +39,32 @@ public final class ClientHooks {
         AltClickMoveToStorageHandler.register();
         ContainerInteractionTracker.register();
         ShulkerItemCategoryBridge.register();
+        BookExportInteractionHandler.register();
+        BookScreenPrompt.register();
+        ChestGroupSortService.register();
         FocusedTagBillboardRenderer.registerHud();
+        FindResultsHudRenderer.registerHud();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.level == null) {
                 LatchLabelClientState.storageTagReconciler().markScopeNotReady();
                 lastResolvedScope = null;
+                FindResultState.clear();
                 return;
             }
             TagScopeResolver.ResolvedScope resolvedScope = TagScopeResolver.resolveCurrentScope(client);
             if (!resolvedScope.equals(lastResolvedScope)) {
                 lastResolvedScope = resolvedScope;
+                FindResultState.clear();
                 LatchLabelClientState.dataManager().setActiveScopeId(
                         resolvedScope.primaryScopeId(),
                         resolvedScope.fallbackReadScopeIds()
                 );
             }
+            FindResultState.expireIfDue();
             LatchLabelClientState.storageTagReconciler().markScopeReady();
         });
-        ClientTickEvents.END_CLIENT_TICK.register(FindScanService::onClientTick);
-        ClientTickEvents.END_CLIENT_TICK.register(NearbyChestScanner::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(BookExportInteractionHandler::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(ChestGroupSortService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(DumpService::onClientTick);
         ClientTickEvents.END_CLIENT_TICK.register(LatchLabelClientState.storageTagReconciler()::onClientTick);
         ClientChunkEvents.CHUNK_LOAD.register(LatchLabelClientState.storageTagReconciler()::onChunkLoad);

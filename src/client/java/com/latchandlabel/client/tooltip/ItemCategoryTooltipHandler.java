@@ -17,7 +17,7 @@ public final class ItemCategoryTooltipHandler {
 
     public static void appendCategoryLine(ItemStack stack, List<Component> lines) {
         Optional<String> shulkerCategoryId = ShulkerItemCategoryBridge.resolveCategoryIdForStack(stack);
-        if (!ClientInputHandler.isShiftDown() && shulkerCategoryId.isEmpty()) {
+        if (!ClientInputHandler.isAltDown() && shulkerCategoryId.isEmpty()) {
             return;
         }
 

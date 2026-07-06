@@ -1,5 +1,6 @@
 package com.latchandlabel.mixin.client;
 
+import com.latchandlabel.client.McCompat;
 import com.latchandlabel.client.book.BookConfirmScreen;
 import com.latchandlabel.client.book.BookExportImportService;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -42,10 +43,10 @@ public abstract class HandledScreenBookAltClickMixin {
         }
 
         if (stack.is(Items.WRITABLE_BOOK)) {
-            mc.gui.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT));
+            McCompat.setScreen(mc, new BookConfirmScreen(BookConfirmScreen.Mode.EXPORT_PICKER));
             cir.setReturnValue(true);
         } else if (stack.is(Items.WRITTEN_BOOK) && BookExportImportService.isLatchLabelBook(stack)) {
-            mc.gui.setScreen(new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
+            McCompat.setScreen(mc, new BookConfirmScreen(BookConfirmScreen.Mode.IMPORT));
             cir.setReturnValue(true);
         }
     }
