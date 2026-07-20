@@ -182,6 +182,9 @@ public final class ClientDataManager implements AutoCloseable {
                 pendingSave.cancel(false);
                 pendingSave = null;
             }
+            // Suppress new saves from the window between releasing saveLock here and
+            // runWithSaveSchedulingSuppressed restoring it after loadActiveScopeData completes.
+            suppressSaveScheduling = true;
         }
 
         flushNow();
@@ -442,6 +445,12 @@ public final class ClientDataManager implements AutoCloseable {
 
         if (!loadedAnyScope && Files.exists(legacyTagsFilePath)) {
             ScopedTags legacyTags = loadLegacyTags(activeScopeId);
+            boolean hasData = !legacyTags.tags().isEmpty()
+                    || (legacyTags.lastUsedCategoryId() != null && !legacyTags.lastUsedCategoryId().isBlank());
+            if (!hasData) {
+                LatchLabel.LOGGER.warn("[DataManager] Legacy tags file is empty or unreadable — skipping migration to avoid persisting empty state");
+                return;
+            }
             tagsByScope.put(activeScopeId, new HashMap<>(legacyTags.tags()));
             if (legacyTags.lastUsedCategoryId() != null && !legacyTags.lastUsedCategoryId().isBlank()) {
                 lastUsedByScope.put(activeScopeId, legacyTags.lastUsedCategoryId());

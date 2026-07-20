@@ -52,18 +52,18 @@ public final class FindResultState {
     private FindResultState() {
     }
 
-    public static void publish(List<FindScanService.FindMatch> matches) {
+    public static synchronized void publish(List<FindScanService.FindMatch> matches) {
         Snapshot prev = snapshot;
         snapshot = new Snapshot(List.copyOf(matches), prev.generation() + 1, Set.of(), prev.slotHighlight(),
                 prev.queryLabel(), prev.categoryId(), 0, System.currentTimeMillis());
     }
 
-    public static void setQueryLabel(Component label) {
+    public static synchronized void setQueryLabel(Component label) {
         Snapshot p = snapshot;
         snapshot = p.copy(p.results(), p.focusedKeys(), p.slotHighlight(), label, p.categoryId(), p.targetIndex(), p.publishedAtMs());
     }
 
-    public static void setQueryCategory(String categoryId) {
+    public static synchronized void setQueryCategory(String categoryId) {
         Snapshot p = snapshot;
         snapshot = p.copy(p.results(), p.focusedKeys(), p.slotHighlight(), p.queryLabel(), categoryId, p.targetIndex(), p.publishedAtMs());
     }
@@ -108,7 +108,7 @@ public final class FindResultState {
         return snapshot.generation();
     }
 
-    public static void cycleTarget() {
+    public static synchronized void cycleTarget() {
         Snapshot p = snapshot;
         if (p.results().isEmpty()) {
             return;
@@ -126,7 +126,7 @@ public final class FindResultState {
         return Optional.of(s.results().get(index));
     }
 
-    public static void focusAll(Collection<ChestKey> chestKeys) {
+    public static synchronized void focusAll(Collection<ChestKey> chestKeys) {
         Snapshot p = snapshot;
         snapshot = p.copy(p.results(), new LinkedHashSet<>(chestKeys), p.slotHighlight(), p.queryLabel(), p.categoryId(), p.targetIndex(), p.publishedAtMs());
     }
@@ -136,14 +136,14 @@ public final class FindResultState {
         return !s.focusedKeys().isEmpty() && s.focusedKeys().contains(chestKey);
     }
 
-    public static void highlightItems(Item exactItem, Set<Item> variantItems) {
+    public static synchronized void highlightItems(Item exactItem, Set<Item> variantItems) {
         Snapshot p = snapshot;
         snapshot = p.copy(p.results(), p.focusedKeys(),
                 new SlotHighlight(exactItem, variantItems == null ? Set.of() : Set.copyOf(variantItems), null),
                 p.queryLabel(), p.categoryId(), p.targetIndex(), p.publishedAtMs());
     }
 
-    public static void highlightCategory(String categoryId) {
+    public static synchronized void highlightCategory(String categoryId) {
         Snapshot p = snapshot;
         snapshot = p.copy(p.results(), p.focusedKeys(), new SlotHighlight(null, Set.of(), categoryId),
                 p.queryLabel(), p.categoryId(), p.targetIndex(), p.publishedAtMs());

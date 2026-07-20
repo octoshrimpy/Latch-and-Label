@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -146,6 +147,7 @@ public final class CategoryItemMappingScreen extends Screen {
                     }
                 })
                 .pos(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24).size(20, 16)
+                .tooltip(Tooltip.create(Component.translatable("latchlabel.button.previous")))
                 .build());
 
         addRenderableWidget(Button.builder(Component.literal(">"), button -> {
@@ -155,6 +157,7 @@ public final class CategoryItemMappingScreen extends Screen {
                     }
                 })
                 .pos(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24).size(20, 16)
+                .tooltip(Tooltip.create(Component.translatable("latchlabel.button.next")))
                 .build());
 
         refilter();

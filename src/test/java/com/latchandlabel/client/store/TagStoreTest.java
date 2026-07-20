@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class TagStoreTest {
@@ -36,6 +37,23 @@ final class TagStoreTest {
         assertFalse(store.snapshotTags().containsKey(KEY));
         assertFalse(store.getLastUsedCategoryId().isPresent());
         assertEquals("primary", store.getActiveScopeId());
+    }
+
+    @Test
+    void snapshotTagsForNullOrBlankScopeFallsBackToDefault() {
+        TagStore store = new TagStore();
+        store.replaceAllScopes(
+                Map.of(TagStore.DEFAULT_SCOPE_ID, Map.of(KEY, "default_cat")),
+                Map.of(),
+                TagStore.DEFAULT_SCOPE_ID,
+                List.of()
+        );
+
+        // Both null and blank scopes must resolve to DEFAULT_SCOPE_ID, not throw.
+        assertNotNull(store.snapshotTagsForScope(null));
+        assertNotNull(store.snapshotTagsForScope("  "));
+        assertEquals("default_cat", store.snapshotTagsForScope(null).get(KEY));
+        assertEquals("default_cat", store.snapshotTagsForScope("  ").get(KEY));
     }
 
     @Test

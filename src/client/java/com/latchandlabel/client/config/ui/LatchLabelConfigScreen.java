@@ -6,7 +6,9 @@ import com.latchandlabel.client.book.BookExportImportService;
 import com.latchandlabel.client.config.ContainerDetectionSettings;
 import com.latchandlabel.client.config.InspectSettings;
 import com.latchandlabel.client.config.MoveSourceMode;
+import com.latchandlabel.client.config.SortSettings;
 import com.latchandlabel.client.config.TransferSettings;
+import com.latchandlabel.client.sort.SortMethod;
 import com.latchandlabel.client.dump.DumpSettings;
 import com.latchandlabel.client.find.FindSettings;
 import net.minecraft.client.Minecraft;
@@ -47,6 +49,8 @@ public final class LatchLabelConfigScreen extends Screen {
     private Button findKeybindButton;
     private Button moveSourceButton;
     private Button pullDestButton;
+    private Button sortMethodButton;
+    private Button sortDropOverflowButton;
 
     public LatchLabelConfigScreen(Screen parent) {
         super(Component.translatable("screen.latchlabel.config.title"));
@@ -56,7 +60,7 @@ public final class LatchLabelConfigScreen extends Screen {
     @Override
     protected void init() {
         panelWidth = Math.max(120, Math.min(520, width - 30));
-        panelHeight = 428;
+        panelHeight = 472;
         panelLeft = (width - panelWidth) / 2;
         panelTop = (height - panelHeight) / 2;
         labelX = panelLeft + 16;
@@ -73,6 +77,7 @@ public final class LatchLabelConfigScreen extends Screen {
         addFindTimeoutControls();
         addDumpRangeControls();
         addToggleControls();
+        addSortControls();
         addDetectionThresholdControls();
         addBookButtons();
 
@@ -127,6 +132,10 @@ public final class LatchLabelConfigScreen extends Screen {
         context.text(font, Component.translatable("screen.latchlabel.config.move_source_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.pull_dest_label"), labelX, y, 0xFFE8E8E8, true);
+        y += rowHeight;
+        context.text(font, Component.translatable("screen.latchlabel.config.sort_method_label"), labelX, y, 0xFFE8E8E8, true);
+        y += rowHeight;
+        context.text(font, Component.translatable("screen.latchlabel.config.sort_drop_overflow_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
         context.text(font, Component.translatable("screen.latchlabel.config.detected_category_threshold_label"), labelX, y, 0xFFE8E8E8, true);
         y += rowHeight;
@@ -284,6 +293,26 @@ public final class LatchLabelConfigScreen extends Screen {
         rowY += rowHeight;
     }
 
+    private void addSortControls() {
+        sortMethodButton = addRenderableWidget(Button.builder(sortMethodText(), button -> {
+                    SortSettings.setSortMethod(nextSortMethod(SortSettings.sortMethod()));
+                    saveConfig();
+                    refreshButtonLabels();
+                })
+                .pos(controlX, rowY).size(controlWidth, 20)
+                .build());
+        rowY += rowHeight;
+
+        sortDropOverflowButton = addRenderableWidget(Button.builder(toggleText(SortSettings.dropOverflowAtFeet()), button -> {
+                    SortSettings.setDropOverflowAtFeet(!SortSettings.dropOverflowAtFeet());
+                    saveConfig();
+                    refreshButtonLabels();
+                })
+                .pos(controlX, rowY).size(controlWidth, 20)
+                .build());
+        rowY += rowHeight;
+    }
+
     private void addDetectionThresholdControls() {
         addStepControl(
                 rowY,
@@ -387,6 +416,25 @@ public final class LatchLabelConfigScreen extends Screen {
         if (pullDestButton != null) {
             pullDestButton.setMessage(pullDestText());
         }
+        if (sortMethodButton != null) {
+            sortMethodButton.setMessage(sortMethodText());
+        }
+        if (sortDropOverflowButton != null) {
+            sortDropOverflowButton.setMessage(toggleText(SortSettings.dropOverflowAtFeet()));
+        }
+    }
+
+    private static SortMethod nextSortMethod(SortMethod current) {
+        return switch (current) {
+            case REGISTRY_ID -> SortMethod.ALPHABETICAL;
+            case ALPHABETICAL -> SortMethod.ITEM_COUNT;
+            case ITEM_COUNT -> SortMethod.CREATIVE;
+            case CREATIVE -> SortMethod.REGISTRY_ID;
+        };
+    }
+
+    private static Component sortMethodText() {
+        return Component.translatable("screen.latchlabel.config.sort_method." + SortSettings.sortMethod().toConfigValue());
     }
 
     private static MoveSourceMode nextMoveSourceMode(MoveSourceMode current) {

@@ -32,7 +32,7 @@ public final class FindResultsHudRenderer {
     private static final int BG_COLOR = 0xC0101010;
     private static final int GOLD = 0xFFFFD84A;
     private static final int GOLD_RGB = 0xFFD84A;
-    private static final int DIM = 0xFFBFBFBF;
+    private static final int DIM = 0xFFDCDCDC;
     // U+2191..2199 arrows, indexed clockwise from north: ↑ ↗ → ↘ ↓ ↙ ← ↖
     private static final String[] ARROWS = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
 

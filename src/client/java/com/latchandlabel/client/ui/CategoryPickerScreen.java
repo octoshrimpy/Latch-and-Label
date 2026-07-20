@@ -315,6 +315,9 @@ public final class CategoryPickerScreen extends Screen {
 
         int maxNameWidth = (editButtonX - 6) - (x + 30);
         String trimmedName = font.plainSubstrByWidth(category.name(), Math.max(0, maxNameWidth));
+        if (trimmedName.length() < category.name().length()) {
+            trimmedName = font.plainSubstrByWidth(category.name(), Math.max(0, maxNameWidth - font.width("…"))) + "…";
+        }
         context.text(font, Component.literal(trimmedName), x + 30, y + 4, 0xFFFFFFFF, true);
     }
 

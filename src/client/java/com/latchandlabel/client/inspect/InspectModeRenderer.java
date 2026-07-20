@@ -9,6 +9,7 @@ import com.latchandlabel.client.model.Category;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.render.CornerBracketRenderer;
 import com.latchandlabel.client.render.RenderLayerCompat;
+import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.render.ThickOutlineRenderer;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
 import com.latchandlabel.client.targeting.StorageRenderShapeResolver;
@@ -71,7 +72,7 @@ public final class InspectModeRenderer {
         Map<ChestKey, String> tags = LatchLabelClientState.tagStore().snapshotTags();
         // Held/inventory matches only apply while actively inspecting; always-on shows plain borders only.
         Optional<String> heldItemCategoryId = inspect
-                ? LatchLabelClientState.itemCategoryMappingService().categoryIdFor(client.player.getMainHandItem())
+                ? categoryIdFor(client.player.getMainHandItem())
                 : Optional.empty();
         boolean isAltDown = inspect && ClientInputHandler.isAltDown();
         Set<String> inventoryCategoryIds = isAltDown ? collectMoveCategoryIds(client) : Set.of();
@@ -195,11 +196,15 @@ public final class InspectModeRenderer {
             if (stack.isEmpty()) {
                 continue;
             }
-            LatchLabelClientState.itemCategoryMappingService()
-                    .categoryIdFor(stack)
-                    .ifPresent(categoryIds::add);
+            categoryIdFor(stack).ifPresent(categoryIds::add);
         }
         return categoryIds;
+    }
+
+    /** A shulker of one category counts as that category, same as the alt-punch move and the sort do. */
+    private static Optional<String> categoryIdFor(ItemStack stack) {
+        return ShulkerItemCategoryBridge.resolveCategoryIdForStack(stack)
+                .or(() -> LatchLabelClientState.itemCategoryMappingService().categoryIdFor(stack));
     }
 
     private record InspectCandidate(

@@ -100,7 +100,7 @@ public final class FocusedTagBillboardRenderer {
 
     private record FocusedCategory(Category category, Vec3 center, boolean isFull) {
         private String displayName() {
-            return isFull ? "⚠️ " + category.name() + " ⚠️" : category.name();
+            return isFull ? "⚠ " + category.name() + " ⚠" : category.name();
         }
     }
 }

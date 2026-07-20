@@ -78,11 +78,7 @@ public final class TagStore {
     }
 
     public synchronized Map<ChestKey, String> snapshotTagsForScope(String scopeId) {
-        String normalizedScopeId = normalizeScopeId(scopeId);
-        if (normalizedScopeId == null) {
-            normalizedScopeId = DEFAULT_SCOPE_ID;
-        }
-        Map<ChestKey, String> tags = tagsByScope.get(normalizedScopeId);
+        Map<ChestKey, String> tags = tagsByScope.get(normalizeScopeId(scopeId));
         if (tags == null || tags.isEmpty()) {
             return Map.of();
         }
@@ -110,11 +106,7 @@ public final class TagStore {
     }
 
     public synchronized Optional<String> snapshotLastUsedCategoryIdForScope(String scopeId) {
-        String normalizedScopeId = normalizeScopeId(scopeId);
-        if (normalizedScopeId == null) {
-            normalizedScopeId = DEFAULT_SCOPE_ID;
-        }
-        String categoryId = lastUsedCategoryIdByScope.get(normalizedScopeId);
+        String categoryId = lastUsedCategoryIdByScope.get(normalizeScopeId(scopeId));
         return categoryId == null || categoryId.isBlank() ? Optional.empty() : Optional.of(categoryId);
     }
 
@@ -267,7 +259,7 @@ public final class TagStore {
     }
 
     private static String normalizeScopeId(String scopeId) {
-        return ScopeUtil.normalizeScopeId(scopeId, null);
+        return ScopeUtil.normalizeScopeId(scopeId, DEFAULT_SCOPE_ID);
     }
 
     private void notifyChanged() {

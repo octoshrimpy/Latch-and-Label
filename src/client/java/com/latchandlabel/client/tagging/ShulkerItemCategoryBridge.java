@@ -117,10 +117,36 @@ public final class ShulkerItemCategoryBridge {
         }
 
         String fingerprint = fingerprint(stack);
-        if (fingerprint == null) {
+        String remembered = fingerprint == null ? null : CATEGORY_BY_FINGERPRINT.get(fingerprint);
+        if (remembered != null) {
+            return Optional.of(remembered);
+        }
+        return uniformContentCategory(stack);
+    }
+
+    /**
+     * A shulker holding items of exactly one category *is* that category — it's a bag of iron, not a
+     * shulker box — so it stores alongside its contents. A mixed or empty shulker has no category;
+     * a tag remembered from breaking a tagged shulker still wins over its contents.
+     */
+    private static Optional<String> uniformContentCategory(ItemStack stack) {
+        ItemContainerContents container = stack.get(DataComponents.CONTAINER);
+        if (container == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(CATEGORY_BY_FINGERPRINT.get(fingerprint));
+        String single = null;
+        for (ItemStack contained : container.nonEmptyItemCopyStream().toList()) {
+            Optional<String> categoryId = LatchLabelClientState.itemCategoryMappingService().categoryIdFor(contained);
+            if (categoryId.isEmpty()) {
+                return Optional.empty();
+            }
+            if (single == null) {
+                single = categoryId.get();
+            } else if (!single.equals(categoryId.get())) {
+                return Optional.empty();
+            }
+        }
+        return Optional.ofNullable(single);
     }
 
     private static void onShulkerBroken(Level world, BlockPos pos, BlockState state) {

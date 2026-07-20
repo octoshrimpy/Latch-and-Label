@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.world.item.ItemStack;
@@ -69,6 +70,7 @@ public final class CategoryIconPickerScreen extends Screen {
                     }
                 })
                 .pos(panelLeft + PANEL_WIDTH - 80, panelTop + PANEL_HEIGHT - 24).size(20, 16)
+                .tooltip(Tooltip.create(Component.translatable("latchlabel.button.previous")))
                 .build());
 
         addRenderableWidget(Button.builder(Component.literal(">"), button -> {
@@ -78,6 +80,7 @@ public final class CategoryIconPickerScreen extends Screen {
                     }
                 })
                 .pos(panelLeft + PANEL_WIDTH - 56, panelTop + PANEL_HEIGHT - 24).size(20, 16)
+                .tooltip(Tooltip.create(Component.translatable("latchlabel.button.next")))
                 .build());
 
         refilter();

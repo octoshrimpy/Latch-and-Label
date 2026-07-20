@@ -81,6 +81,8 @@ public final class ClientConfigManager {
         FindSettings.setFindHighlightTimeoutSeconds(asInt(root.get("findHighlightTimeoutSeconds"), 60));
         TransferSettings.setMoveSourceMode(MoveSourceMode.fromConfigValue(asString(root.get("moveSourceMode"), "inventory")));
         TransferSettings.setPullDropsOnGround(asBoolean(root.get("pullDropsOnGround"), false));
+        SortSettings.setSortMethod(com.latchandlabel.client.sort.SortMethod.fromConfigValue(asString(root.get("sortMethod"), "registry_id")));
+        SortSettings.setDropOverflowAtFeet(asBoolean(root.get("sortDropOverflowAtFeet"), false));
         ContainerDetectionSettings.setDetectedCategoryThresholdPercent(asInt(
                 root.get("detectedCategoryThresholdPercent"),
                 ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent()
@@ -127,6 +129,8 @@ public final class ClientConfigManager {
         FindSettings.setFindHighlightTimeoutSeconds(60);
         TransferSettings.setMoveSourceMode(MoveSourceMode.INVENTORY);
         TransferSettings.setPullDropsOnGround(false);
+        SortSettings.setSortMethod(com.latchandlabel.client.sort.SortMethod.REGISTRY_ID);
+        SortSettings.setDropOverflowAtFeet(false);
         ContainerDetectionSettings.setDetectedCategoryThresholdPercent(ContainerDetectionSettings.defaultDetectedCategoryThresholdPercent());
         DumpSettings.setQueueMode(false);
         DumpSettings.setDumpRange(16);
@@ -154,6 +158,8 @@ public final class ClientConfigManager {
         root.addProperty("findHighlightTimeoutSeconds", FindSettings.findHighlightTimeoutSeconds());
         root.addProperty("moveSourceMode", TransferSettings.moveSourceMode().toConfigValue());
         root.addProperty("pullDropsOnGround", TransferSettings.pullDropsOnGround());
+        root.addProperty("sortMethod", SortSettings.sortMethod().toConfigValue());
+        root.addProperty("sortDropOverflowAtFeet", SortSettings.dropOverflowAtFeet());
         root.addProperty("detectedCategoryThresholdPercent", ContainerDetectionSettings.detectedCategoryThresholdPercent());
         root.addProperty("dumpQueueMode", DumpSettings.queueMode());
         root.addProperty("dumpRange", DumpSettings.dumpRange());

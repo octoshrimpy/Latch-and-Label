@@ -67,6 +67,32 @@ final class ClientDataManagerTest {
     }
 
     @Test
+    void corruptLegacyTagsFileDoesNotPersistEmptyScopedFile() throws Exception {
+        // Write a corrupt legacy tags.json at the config root (not inside scopes/).
+        Files.writeString(tempDir.resolve("tags.json"), "{ not valid json !!!!");
+
+        TagStore tagStore = new TagStore();
+        ClientDataManager manager = new ClientDataManager(
+                new CategoryStore(),
+                tagStore,
+                new ItemCategoryMappingService(),
+                tempDir
+        );
+
+        try {
+            manager.initialize();
+            manager.setActiveScopeId("primary", List.of());
+
+            // Corrupt legacy file must not be migrated to an empty scoped file.
+            assertFalse(Files.exists(tempDir.resolve("scopes").resolve("primary").resolve("tags.json")),
+                    "Scoped tags.json must not be created when legacy file is corrupt");
+            assertFalse(tagStore.getTag(FALLBACK_KEY).isPresent());
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
     void profiledMultiplayerScopeMigratesBaseServerData() throws Exception {
         Path baseScope = tempDir.resolve("scopes").resolve("mp_example.org_25565");
         Files.createDirectories(baseScope);

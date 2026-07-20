@@ -207,6 +207,9 @@ public final class ObservedIndexStore {
                     }
                     if (!items.isEmpty()) {
                         entries.put(key, new Entry(Set.copyOf(items), t, staleSince));
+                    } else if (arr != null && !arr.isEmpty()) {
+                        LatchLabel.LOGGER.warn("[ObservedIndex] All {} items for chest {} missing from registry — entry dropped (mod removed?)",
+                                arr.size(), e.getKey());
                     }
                 }
             } catch (Exception ex) {

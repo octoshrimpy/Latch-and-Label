@@ -6,6 +6,7 @@ import com.latchandlabel.client.config.TransferSettings;
 import com.latchandlabel.client.find.ContainerObserver;
 import com.latchandlabel.client.model.ChestKey;
 import com.latchandlabel.client.model.Category;
+import com.latchandlabel.client.sort.ChestGroupSortService;
 import com.latchandlabel.client.tagging.ShulkerItemCategoryBridge;
 import com.latchandlabel.client.tagging.StorageTagResolver;
 import com.latchandlabel.client.targeting.StorageKeyResolver;
@@ -14,6 +15,8 @@ import com.latchandlabel.client.ui.ContainerTagButtonManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -32,6 +35,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.List;
 import java.util.Optional;
 
 public final class AltClickMoveToStorageHandler {
@@ -83,10 +87,18 @@ public final class AltClickMoveToStorageHandler {
                     ? AutoMoveOperation.PULL_NON_MATCHING_FROM_STORAGE
                     : AutoMoveOperation.PUSH_MATCHING_TO_STORAGE;
             sendActionBar(client, Component.translatable(operation.startingTranslationKey()));
-            BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(pos), direction, pos, false);
-            pendingAutoMove = new PendingAutoMove(resolved.get(), operation, AUTO_MOVE_TIMEOUT_TICKS, System.currentTimeMillis());
+
+            // Both moves act on the *category group*, not just the punched chest, walking it in the
+            // same fill order the sort uses: a push lands items where a sort would put them (a full
+            // chest spills into the next), a pull evicts strays from every chest in the group.
+            List<ChestKey> queue = ChestGroupSortService.groupInFillOrder(client, resolved.get(), categoryId.get());
+            ChestKey target = queue.isEmpty() ? resolved.get() : queue.get(0);
+            List<ChestKey> rest = queue.isEmpty() ? List.of() : List.copyOf(queue.subList(1, queue.size()));
+
+            pendingAutoMove = new PendingAutoMove(target, rest, categoryId.get(), operation,
+                    AUTO_MOVE_TIMEOUT_TICKS, System.currentTimeMillis(), 0, !pullNonMatching);
             try {
-                openStorageForAutoMove(client, hitResult, pullNonMatching);
+                openStorageForAutoMove(client, hitResultFor(target, direction), pullNonMatching);
             } catch (RuntimeException e) {
                 pendingAutoMove = null;
                 throw e;
@@ -139,6 +151,12 @@ public final class AltClickMoveToStorageHandler {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(AltClickMoveToStorageHandler::onEndTick);
+    }
+
+    /** Hit result for opening {@code chest}; {@code direction} may be null (the face doesn't matter). */
+    private static BlockHitResult hitResultFor(ChestKey chest, Direction direction) {
+        BlockPos pos = chest.pos();
+        return new BlockHitResult(Vec3.atCenterOf(pos), direction == null ? Direction.UP : direction, pos, false);
     }
 
     private static void openStorageForAutoMove(Minecraft client, BlockHitResult hitResult, boolean wasShiftActivated) {
@@ -199,6 +217,14 @@ public final class AltClickMoveToStorageHandler {
 
         PendingAutoMove current = pendingAutoMove;
         if (current.remainingTicks() <= 0) {
+            // The chest never opened — too far for the server's reach check, or a blocked shulker.
+            // Skip it and try the next one in the group rather than aborting the whole move.
+            if (!current.queue().isEmpty()) {
+                pendingAutoMove = current.advanceToNextChest(current.movedStacks());
+                openStorageForAutoMove(client, hitResultFor(pendingAutoMove.target(), null),
+                        current.operation() == AutoMoveOperation.PULL_NON_MATCHING_FROM_STORAGE);
+                return;
+            }
             sendActionBar(client, Component.translatable("latchlabel.drop.failed"));
             pendingAutoMove = null;
             return;
@@ -207,21 +233,31 @@ public final class AltClickMoveToStorageHandler {
         // Wait for the freshly-opened menu to be synced from the server before clicking;
         // MC 26.x rejects container clicks carrying a stale stateId, which desyncs the move.
         boolean menuSynced = ContainerObserver.lastContentsSyncMs() > current.createdAtMs();
-        if (menuSynced && McCompat.getScreen(client) instanceof AbstractContainerScreen<?>) {
-            boolean hadMatchingStacks = current.operation() == AutoMoveOperation.PUSH_MATCHING_TO_STORAGE
-                    && ContainerTagButtonManager.hasMatchingPlayerStacksForCurrentScreen(client, current.target());
-            int movedStacks = switch (current.operation()) {
-                case PUSH_MATCHING_TO_STORAGE ->
-                        ContainerTagButtonManager.moveMatchingFromPlayerToStorageForCurrentScreen(client, current.target());
-                case PULL_NON_MATCHING_FROM_STORAGE ->
-                        ContainerTagButtonManager.moveNonMatchingFromStorageToPlayerForCurrentScreen(client, current.target());
-            };
-            if (movedStacks >= 0) {
-                client.player.closeContainer();
-                sendActionBar(client, current.operation().resultMessage(movedStacks, hadMatchingStacks));
-                pendingAutoMove = null;
+        if (menuSynced && McCompat.getScreen(client) instanceof AbstractContainerScreen<?> screen) {
+            // Move by category against the open menu, not via the *ForCurrentScreen helpers: those
+            // check the screen's chest against an expected key, and the screen's chest is resolved
+            // from the crosshair — which still points at the punched chest while the group is walked.
+            boolean pushing = current.operation() == AutoMoveOperation.PUSH_MATCHING_TO_STORAGE;
+            int movedStacks = pushing
+                    ? ContainerTagButtonManager.moveMatchingFromPlayerToStorage(client, screen.getMenu(), current.categoryId())
+                    : ContainerTagButtonManager.moveNonMatchingFromStorageToPlayer(client, screen.getMenu(), current.categoryId());
+
+            client.player.closeContainer();
+            int movedTotal = current.movedStacks() + Math.max(0, movedStacks);
+            // A push has more to do while it still holds matching items; a pull, while it still has
+            // somewhere to put strays. Either way it stops when the group runs out.
+            boolean moreToDo = pushing
+                    ? hasMatchingInventoryStacks(client.player.getInventory(), current.categoryId())
+                    : hasFreeInventorySlot(client.player.getInventory());
+            if (moreToDo && !current.queue().isEmpty()) {
+                pendingAutoMove = current.advanceToNextChest(movedTotal);
+                openStorageForAutoMove(client, hitResultFor(pendingAutoMove.target(), null), !pushing);
                 return;
             }
+            boolean leftovers = pushing && moreToDo;
+            sendActionBar(client, current.operation().resultMessage(movedTotal, current.hadMatchingStacks(), leftovers));
+            pendingAutoMove = null;
+            return;
         }
 
         pendingAutoMove = current.withRemainingTicks(current.remainingTicks() - 1);
@@ -258,6 +294,16 @@ public final class AltClickMoveToStorageHandler {
                     .map(categoryId::equals)
                     .orElse(false);
             if (matches) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Room to pull more strays into. Partial stacks may also absorb items — an empty slot is the honest floor. */
+    private static boolean hasFreeInventorySlot(Container inventory) {
+        for (int slotIndex = 0; slotIndex < 36; slotIndex++) {
+            if (inventory.getItem(slotIndex).isEmpty()) {
                 return true;
             }
         }
@@ -310,7 +356,13 @@ public final class AltClickMoveToStorageHandler {
             return startingTranslationKey;
         }
 
-        private Component resultMessage(int movedStacks, boolean hadEligibleItems) {
+        /** {@code leftovers}: matching items are still in the inventory and the group has no room left. */
+        private Component resultMessage(int movedStacks, boolean hadEligibleItems, boolean leftovers) {
+            if (leftovers && blockedTranslationKey != null) {
+                return movedStacks > 0
+                        ? Component.translatable("latchlabel.drop.group_full", movedStacks)
+                        : Component.translatable(blockedTranslationKey);
+            }
             if (movedStacks > 0) {
                 return Component.translatable(finishedTranslationKey, movedStacks);
             }
@@ -321,14 +373,28 @@ public final class AltClickMoveToStorageHandler {
         }
     }
 
+    /**
+     * An in-flight alt-punch move. For a push, {@code queue} holds the rest of the category group in
+     * fill order: when the open chest can't take everything, the move continues into the next one.
+     */
     private record PendingAutoMove(
             ChestKey target,
+            List<ChestKey> queue,
+            String categoryId,
             AutoMoveOperation operation,
             int remainingTicks,
-            long createdAtMs
+            long createdAtMs,
+            int movedStacks,
+            boolean hadMatchingStacks
     ) {
         private PendingAutoMove withRemainingTicks(int ticks) {
-            return new PendingAutoMove(target, operation, ticks, createdAtMs);
+            return new PendingAutoMove(target, queue, categoryId, operation, ticks, createdAtMs,
+                    movedStacks, hadMatchingStacks);
+        }
+
+        private PendingAutoMove advanceToNextChest(int movedSoFar) {
+            return new PendingAutoMove(queue.get(0), queue.subList(1, queue.size()), categoryId, operation,
+                    AUTO_MOVE_TIMEOUT_TICKS, System.currentTimeMillis(), movedSoFar, hadMatchingStacks);
         }
     }
 

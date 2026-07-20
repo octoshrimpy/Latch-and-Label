@@ -1,8 +1,6 @@
 package com.latchandlabel.client.targeting;
 
-import net.minecraft.world.level.block.entity.BarrelBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.Container;
 
@@ -16,8 +14,6 @@ public final class TrackableStorage {
 
     public static boolean isTrackableStorage(BlockEntity blockEntity) {
         return blockEntity instanceof Container
-                || blockEntity instanceof ChestBlockEntity
-                || blockEntity instanceof BarrelBlockEntity
                 || blockEntity instanceof ShulkerBoxBlockEntity;
     }
 }
